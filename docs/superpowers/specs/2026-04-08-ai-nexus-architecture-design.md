@@ -1,7 +1,7 @@
 # AI Nexus 架构设计文档
 
-> 日期: 2026-04-08
-> 状态: Approved (v2 — Phase 0 评审后修订)
+> 日期: 2026-04-08 (v3 — 飞书文档对齐)
+> 状态: Approved
 > 阶段: Phase 0 → Phase 1
 
 ## 修订记录
@@ -9,7 +9,8 @@
 | 日期 | 版本 | 变更 |
 |------|------|------|
 | 2026-04-08 | v1 | 初始设计 |
-| 2026-04-08 | v2 | Phase 0 评审后修订: mem0→Qdrant, MCP 集成修正, 补充 embedding/同步/迁移/降级策略 |
+| 2026-04-08 | v2 | Phase 0 评审: mem0→Qdrant, MCP 集成修正 |
+| 2026-04-09 | v3 | 飞书文档 + 架构全景图对齐: 去向量库, mem0 平级共存, 查询路由, 数据飞轮, 知识 Lint |
 
 ## 1. 项目定位
 
@@ -21,81 +22,105 @@ AI Nexus 是**业务知识治理层**，让 AI 像资深员工一样懂业务规
 3. **知识审核工作流** — AI 抽取知识候选项 + 人工审核入库
 
 ### 不做什么
-- 不自建向量数据库层（用 Qdrant/OpenViking）
-- 不做通用 Agent 记忆管理
+- 不自建向量数据库层（语义检索是 mem0/OpenViking 的职责）
+- 不做通用 Agent 记忆管理（mem0/OpenViking 的赛道）
 - 不做文档库（飞书/Confluence 已经做了）
+- 不做会话记忆（mem0 代理，不重复造轮子）
 
-## 2. 架构决策
+## 2. 五层全景架构
+
+```
+L3  ┌─────────────────────────────────────────────┐
+    │  AI 编码工具层                                  │
+    │  Claude Code / Cursor / Copilot                │
+    │  同一 MCP 入口调用                              │
+    └──────────────┬──────────────┬─────────────────┘
+                   │              │
+L2  ┌──────────────▼──────┐ ┌────▼──────────────────┐
+    │   AI Nexus (你)      │ │ mem0 / OpenViking      │
+    │   实体图谱+规则引擎    │◄►│ 通用记忆层              │
+    │   AI 抽取+人工审核    │并存│ 会话历史+文档           │
+    │   MCP Server 暴露    │ │ 语义向量检索            │
+    │                     │ │ MCP Server 暴露        │
+    └─────────────────────┘ └────────────────────────┘
+               ▲                        ▲
+L1  ┌──────────┴────────────────────────┤
+    │  知识原料层                          │
+    │  llm-wiki │ 飞书文档 │ 业务知识       │
+    └────────────────────────────────────┘
+                        │
+L0  ┌────────────────┐  ┌▼──────────────────┐
+    │ 图DB/关系型DB    │  │ 向量数据库          │
+    │ SQLite (MVP)    │  │ mem0 内部管理       │
+    │ PostgreSQL (后期)│  │ AI Nexus 不直接管理 │
+    └─────────────────┘  └──────────────────┘
+```
+
+### 核心原则：代理它，不是替代它
+
+- AI Nexus 和 mem0/OpenViking **平级共存**，通过各自的 MCP Server 暴露
+- Claude Code 通过同一个 MCP 入口同时调用两者
+- AI Nexus = 业务规则（**约束**，不可违反）
+- mem0 = 会话记忆（**参考**，可被覆盖）
+- 这个优先级要在 MCP 工具的 description 里写清楚
+
+## 3. 架构决策
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
 | 部署模式 | 团队共享 HTTP 服务 | 团队共享知识库，多消费方接入 |
-| 架构模式 | 分层单体 (FastAPI + MCP) | 单进程暴露 MCP + REST API，MVP 阶段够用 |
-| 向量搜索 | Qdrant (默认) + OpenViking (可选) | Qdrant 支持丰富元数据过滤，生产级可靠；OpenViking 留给未来 Agent 上下文场景 |
-| Embedding | fastembed 本地模型 | 零外部依赖，无需 API key，MVP 阶段够用 |
-| AI 抽取 | Claude API | 效果最好，API 成本可控 |
+| 架构模式 | 分层单体 (FastAPI + MCP) | 单进程暴露 MCP + REST API，MVP 够用 |
+| 结构化存储 | SQLite (MVP) → PostgreSQL (生产) | 轻量起步，后期可迁移 |
+| 语义检索 | 代理 mem0（mem0 内部用向量库） | 不自建向量数据库，mem0 更新自动受益 |
+| AI 抽取 | Claude API | 效果最好，成本可控 |
 | Hook 触发 | Shell 脚本 → HTTP API | Claude Code hooks 调用共享服务 |
-| 结构化存储 | SQLite (aiosqlite) | 轻量，单文件，适合知识图谱规模 |
-| 同步策略 | Service 层主动同步 | 审核通过时 service 直接调用 search_provider.add()，简单直接 |
-| 降级策略 | 向量不可用 → SQLite LIKE | 保证核心功能在向量服务宕机时仍可用 |
+| 同步策略 | Service 层主动同步 | 审核通过时 service 直接写入 |
+| 查询路由 | 内部自动路由 | 结构化→图遍历，模糊→mem0，调用方无感知 |
 
-### v2 决策变更说明
-
-| 变更 | v1 | v2 | 原因 |
-|------|----|----|------|
-| 向量搜索后端 | mem0 默认 | **Qdrant** 默认 | mem0 是会话记忆系统，不支持结构化元数据过滤 |
-| MCP SSE 挂载 | `mcp.sse_app()` | **`mcp.http_app()`** + `combine_lifespans` | FastMCP 2.3.1+ API 变更 |
-| MCP 工具 | 同步函数 | **async def** | service 层是 async，需直接 await |
-| Embedding | 未定义 | **fastembed 本地模型** | 补充设计缺口 |
-| 同步触发 | 未定义 | **Service 层主动同步** | 补充设计缺口 |
-| 迁移机制 | 一句话 | **编号 SQL + schema_version 表** | 补充设计缺口 |
-| 错误处理 | 无 | **降级为 SQLite LIKE** | 补充设计缺口 |
-
-## 3. 目录结构
+## 4. 目录结构
 
 ```
 src/ai_nexus/
-├── main.py                    # FastAPI app 入口 + MCP http_app 挂载
-├── config.py                  # 配置管理（pydantic-settings）
+├── main.py                    # FastAPI app + MCP http_app
+├── config.py                  # pydantic-settings
 │
 ├── models/                    # Pydantic 数据模型
-│   ├── entity.py              # Entity, EntityCreate, EntityUpdate
-│   ├── relation.py            # Relation, RelationCreate
-│   ├── rule.py                # Rule, RuleCreate, RuleUpdate
-│   └── audit.py               # AuditLog, KnowledgeCandidate, HookRequest
+│   ├── entity.py
+│   ├── relation.py
+│   ├── rule.py
+│   └── audit.py
 │
-├── db/                        # 数据库连接管理
-│   ├── sqlite.py              # SQLite 连接管理 (aiosqlite)
+├── db/                        # 数据库
+│   ├── sqlite.py              # aiosqlite 连接管理
 │   └── migrations/            # 编号 SQL 迁移文件
-│       └── 001_init_schema.sql
 │
-├── repos/                     # 单表 CRUD（纯数据访问）
-│   ├── entity_repo.py         # entities 表操作
-│   ├── relation_repo.py       # relations 表操作
-│   ├── rule_repo.py           # rules 表操作
-│   └── audit_repo.py          # knowledge_audit_log 表操作
+├── repos/                     # 单表 CRUD
+│   ├── entity_repo.py
+│   ├── relation_repo.py
+│   ├── rule_repo.py
+│   └── audit_repo.py
 │
-├── search/                    # 语义搜索（抽象 + 实现）
-│   ├── provider.py            # SearchProvider 抽象接口
-│   ├── qdrant_provider.py     # Qdrant + fastembed 实现（默认）
-│   └── openviking_provider.py # OpenViking 实现（可选, Phase 3+）
-│
-├── services/                  # 业务逻辑层（组合 repo + search）
-│   ├── graph_service.py       # 知识图谱业务逻辑（含同步）
-│   ├── search_service.py      # 语义 + 结构化搜索（含降级）
+├── services/                  # 业务逻辑层
+│   ├── graph_service.py       # 知识图谱（含同步 + 图遍历查询）
+│   ├── query_service.py       # 统一查询（内部路由: 结构化→图遍历, 模糊→mem0）
 │   ├── extraction_service.py  # Claude API 知识抽取
-│   └── hook_service.py        # pre_plan / pre_commit 逻辑
+│   ├── hook_service.py        # pre_plan / pre_commit
+│   └── lint_service.py        # 知识 Lint（冲突检测、死规则扫描）
 │
-├── mcp/                       # MCP Server 入口
-│   └── server.py              # async MCP 工具定义（调用 service 层）
+├── proxy/                     # mem0/OpenViking 代理层
+│   ├── mem0_proxy.py          # get_session_ctx 等代理工具
+│   └── openviking_proxy.py    # OpenViking 代理（Phase 3+）
 │
-├── api/                       # REST API 入口
-│   ├── router.py              # FastAPI router
-│   └── dependencies.py        # 依赖注入（db sessions, search provider）
+├── mcp/                       # MCP Server
+│   └── server.py              # async MCP 工具（自有 + 代理）
+│
+├── api/                       # REST API
+│   ├── router.py
+│   └── dependencies.py
 │
 └── hooks/                     # Claude Code Hook 脚本
-    ├── pre_plan.py            # 开发规划前注入业务上下文
-    └── pre_commit.py          # 提交前校验业务规则
+    ├── pre_plan.py
+    └── pre_commit.py
 ```
 
 ### 分层原则
@@ -103,220 +128,149 @@ src/ai_nexus/
 ```
 models (纯数据) → db (连接) → repos (单表 CRUD) → services (业务逻辑) → api/mcp (入口)
                                             ↗
-                                      search (语义搜索)
+                                      proxy (mem0/OpenViking 代理)
 ```
 
-- `models` 无外部依赖，纯 Pydantic 定义
 - `repos` 只操作单表，不知道业务语义
-- `services` 组合多个 repo + search provider，实现业务逻辑
-- `services` 负责同步: 审核通过时主动调用 search_provider.add()
-- `api` 和 `mcp` 是两个入口壳，都调用 service 层，不直接操作 repo
-- `search` 独立模块，通过抽象接口解耦
+- `services` 组合多个 repo，实现业务逻辑（图遍历查询、同步）
+- `proxy` 封装 mem0/OpenViking API 调用，暴露为 MCP 代理工具
+- `query_service` 统一路由：结构化查询走 repos，模糊查询走 proxy.mem0
+- `api` 和 `mcp` 是两个入口壳，都调用 service/proxy 层
 
-## 4. 数据模型
+## 5. 数据模型
 
-### 4.1 SQLite 表结构（4 张核心表）
+### 5.1 SQLite 表结构（4 张核心表）
 
 - `entities` — 业务实体（name, type, description, domain, attributes, status, source）
 - `relations` — 实体关系（source_entity_id, relation_type, target_entity_id, conditions）
 - `rules` — 业务规则（name, description, domain, severity, conditions, confidence）
 - `knowledge_audit_log` — 审核日志（table_name, record_id, action, old_value, new_value, reviewer）
 
-### 4.2 Qdrant 向量数据
+### 5.2 向量数据
 
-**Collection 策略**: 两个独立 collection
+AI Nexus **不直接管理向量数据**。语义检索通过代理调用 mem0 实现：
+- mem0 内部使用向量数据库存储 embedding
+- AI Nexus 只负责结构化图谱的图遍历查询
+- MVP 阶段（几百条规则）纯 SQLite 图遍历够用，不需要语义召回
+- 规模增长后通过 mem0 代理获得语义检索能力
 
-| Collection | 内容 | Payload 字段 |
-|------------|------|-------------|
-| `entities` | 实体描述 embedding | name, type, domain, status |
-| `rules` | 规则描述 embedding | name, domain, severity, status |
-
-**为什么分两个 collection**: 元数据 schema 不同，过滤条件不同，分开更清晰。
-
-**Embedding 模型**: fastembed 默认 `all-MiniLM-L6-v2` (384维)，可配置切换为 `BAAI/bge-small-zh-v1.5` (512维，中文优化)。
-
-**同步策略**:
-- 实体/规则 `status` 变为 `approved` 时，service 层主动调用 `search_provider.add()`
-- 更新时调用 `search_provider.add()` 覆盖旧向量
-- 删除时调用 `search_provider.delete()`
-- 启动时通过 `ensure_ready()` 确保 collection 存在
-- 提供 `sync_all()` 用于全量重建索引
-
-## 5. 核心数据流
-
-### 5.1 语义搜索
-
-```
-查询 "支付超时规则"
-    │
-    ▼
-search_service.search(query, domain, limit)
-    │
-    ├── search_provider.health()           → 检查 Qdrant 可用
-    │   ├── 可用 → search_provider.search(query, filter={domain, status})
-    │   │          → Qdrant 语义搜索 → top-K 候选 ID
-    │   └── 不可用 → SQLite LIKE 降级搜索
-    │
-    ├── entity_repo.get_by_ids(ids)       → SQLite 取完整实体
-    ├── rule_repo.get_by_ids(ids)         → SQLite 取完整规则
-    └── 合并排序返回
-```
-
-### 5.2 知识审核 + 向量同步
-
-```
-AI 抽取 / 手动提交 → submit_knowledge_candidate()
-    │
-    ├── 写入 entities/rules 表 (status='pending')
-    ├── 写入 audit_log
-    │
-    ▼ 人工审核
-    │
-    ├── POST /api/audit/{id}/approve
-    │     → service 更新 status='approved'
-    │     → service 调用 search_provider.add() 同步向量
-    │     → 写入 audit_log
-    │
-    └── POST /api/audit/{id}/reject
-          → 标记拒绝 + 记录原因
-          → 不触发向量同步
-```
-
-### 5.3 pre_plan Hook
-
-```
-Claude Code hook 触发（开发者开始规划任务）
-    │
-    ▼
-pre_plan.py → HTTP POST /api/hooks/pre-plan
-    │   body: { "task_description": "添加微信支付退款功能" }
-    ▼
-hook_service.pre_plan(task_description)
-    │
-    ├── search_service.search_context(task_description)
-    │     → 返回相关 entities + rules + relations
-    │
-    └── 格式化注入文本 → 返回给 Claude Code
-```
-
-### 5.4 pre_commit Hook
-
-```
-Claude Code hook 触发（提交前）
-    │
-    ▼
-pre_commit.py → HTTP POST /api/hooks/pre-commit
-    │   body: { "diff": "...", "affected_files": [...] }
-    ▼
-hook_service.pre_commit(diff, affected_files)
-    │
-    ├── extraction_service.analyze_diff(diff)  → 提取 affected_entities
-    ├── rule_repo.get_related(affected_entities) → 查询相关规则
-    ├── Claude API 校验变更是否违反规则
-    │
-    └── 返回 { "status": "pass" | "block", "violations": [...] }
-```
-
-## 6. API 设计
-
-### 6.1 MCP 工具（5 个核心，async）
-
-| 工具 | 输入 | 输出 | 描述 |
-|------|------|------|------|
-| `search_entities` | query, domain?, limit? | Entity[] | 语义搜索业务实体 |
-| `search_rules` | query, domain?, severity?, limit? | Rule[] | 语义搜索业务规则 |
-| `get_business_context` | task_description, keywords? | {entities, rules, relations} | 获取完整业务上下文 |
-| `validate_against_rules` | change_description, affected_entities?, diff_summary? | {violations} | 校验变更是否违反规则 |
-| `submit_knowledge_candidate` | type, data, source, confidence? | {id, status} | 提交知识候选项 |
-
-> **MCP 工具返回类型**: FastMCP 工具返回 JSON 字符串 (`str`)。表中的 Entity[] 等表示 JSON 内的数据结构，实际返回是 `json.dumps(...)` 序列化后的字符串。
-
-### 6.2 REST API
-
-```
-# 知识图谱 CRUD
-GET    /api/entities              # 列表（支持过滤）
-POST   /api/entities              # 创建
-GET    /api/entities/{id}         # 详情
-PUT    /api/entities/{id}         # 更新
-DELETE /api/entities/{id}         # 删除
-
-GET    /api/relations             # 列表
-POST   /api/relations             # 创建
-DELETE /api/relations/{id}        # 删除
-
-GET    /api/rules                 # 列表（支持过滤）
-POST   /api/rules                 # 创建
-GET    /api/rules/{id}            # 详情
-PUT    /api/rules/{id}            # 更新
-DELETE /api/rules/{id}            # 删除
-
-# 知识审核
-GET    /api/audit/pending         # 待审核列表
-POST   /api/audit/{id}/approve    # 通过（触发向量同步）
-POST   /api/audit/{id}/reject     # 拒绝
-
-# 开发 Hook
-POST   /api/hooks/pre-plan        # pre_plan 触发
-POST   /api/hooks/pre-commit      # pre_commit 触发
-
-# 搜索
-POST   /api/search                # 统一搜索入口
-
-# 运维
-POST   /api/search/reindex        # 全量重建向量索引
-```
-
-## 7. SearchProvider 抽象接口
+## 6. 查询路由
 
 ```python
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any
+# query_service.py — 内部自动路由
+async def query_rules(query: str, domain: str | None = None, limit: int = 10):
+    """统一查询入口，自动路由到合适的检索方式。"""
+    # 1. 先尝试结构化查询（图遍历）
+    results = await graph_service.search_by_keywords(query, domain, limit)
+    if results:
+        return results
 
+    # 2. 结构化没命中，走 mem0 语义检索（模糊匹配）
+    if await mem0_proxy.is_available():
+        mem0_results = await mem0_proxy.search(query, limit)
+        # 从 mem0 结果中提取 ID，回 SQLite 取完整记录
+        ids = [r.id for r in mem0_results]
+        return await graph_service.get_by_ids(ids)
 
-@dataclass
-class SearchResult:
-    id: str           # 对应 SQLite 记录的 ID
-    score: float      # 相关度分数
-    content: str      # 匹配的文本片段
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-class SearchProvider(ABC):
-    """语义搜索抽象接口，支持 Qdrant / OpenViking 等后端。"""
-
-    @abstractmethod
-    async def add(self, id: str, content: str, metadata: dict[str, Any]) -> None:
-        """添加或更新一条向量记录。"""
-
-    @abstractmethod
-    async def search(
-        self, query: str, limit: int = 10, filter: dict[str, Any] | None = None
-    ) -> list[SearchResult]:
-        """语义搜索，返回相关结果。"""
-
-    @abstractmethod
-    async def delete(self, id: str) -> None:
-        """删除一条向量记录。"""
-
-    @abstractmethod
-    async def health(self) -> bool:
-        """检查后端是否可用。"""
-
-    @abstractmethod
-    async def sync_all(self, items: list[tuple[str, str, dict[str, Any]]]) -> None:
-        """批量同步/重建索引。items: [(id, content, metadata), ...]"""
-
-    @abstractmethod
-    async def ensure_ready(self) -> None:
-        """确保后端就绪（创建 collection 等）。启动时调用。"""
+    # 3. mem0 不可用，降级为 SQLite LIKE
+    return await graph_service.fallback_search(query, domain, limit)
 ```
 
-## 8. 配置管理
+调用方（MCP 工具、REST API、Hook）只调 `query_service`，不感知底层路由。
+
+## 7. 核心数据流
+
+### 7.1 知识审核 + 同步
+
+```
+提交候选项 → status='pending' → 人工审核
+    ├── approve → status='approved' → 正式入库
+    └── reject → 标记拒绝
+```
+
+MVP 阶段不需要向 mem0 同步（纯图遍历）。后期规模增长时，审核通过可选择性同步到 mem0。
+
+### 7.2 pre_plan Hook
+
+```
+Claude Code hook → HTTP POST /api/hooks/pre-plan
+    │
+    ├── query_service 查相关实体/规则 → 图遍历
+    ├── mem0_proxy.get_session_ctx → 会话历史（可选）
+    │
+    └── 合并注入（业务规则优先级 > 会话历史）
+```
+
+### 7.3 数据飞轮（Phase 3+）
+
+```
+PR 违规事件（冲突位置 + 触发规则 + 修正方式）
+    │
+    ▼
+自动回写图谱 → 加强规则节点置信度
+    │
+    └── 或生成新的规则候选项 → 进入审核工作流
+
+llm-wiki 是单向的（你喂它，它长大）
+AI Nexus 可以是双向的（规则执行反过来喂养规则库）
+```
+
+### 7.4 知识 Lint（Phase 3+）
+
+定期扫描图谱，检测：
+- 互相冲突的规则
+- 没有任何 PR 曾经触发过的规则节点（死规则 / 未覆盖的风险）
+- 最近两周 PR 里违反了但没被系统捕获的案例
+
+输出为周报推给团队负责人。
+
+## 8. MCP 工具设计
+
+### 8.1 AI Nexus 自有工具（5 个核心，async）
+
+| 工具 | 输入 | 描述 |
+|------|------|------|
+| `search_entities` | query, domain?, limit? | 图遍历搜索业务实体 |
+| `search_rules` | query, domain?, severity?, limit? | 图遍历搜索业务规则 |
+| `get_business_context` | task_description, keywords? | 获取完整业务上下文（给 pre_plan） |
+| `validate_against_rules` | change_description, affected_entities?, diff_summary? | 校验变更是否违反规则（给 pre_commit） |
+| `submit_knowledge_candidate` | type, data, source, confidence? | 提交知识候选项 |
+
+### 8.2 mem0 代理工具
+
+| 工具 | 描述 | 优先级 |
+|------|------|--------|
+| `get_session_ctx` | 代理 mem0，获取项目会话记忆 | 参考（可被覆盖） |
+
+### 8.3 OpenViking 代理工具（Phase 3+）
+
+| 工具 | 描述 |
+|------|------|
+| `search_documents` | 代理 OpenViking，搜索背景文档 |
+| `get_context` | 代理 OpenViking，获取分层上下文 |
+
+## 9. MCP 集成
 
 ```python
-# config.py — 使用 pydantic-settings
+# main.py
+from fastmcp import FastMCP
+from fastmcp.utilities.lifespan import combine_lifespans
+
+mcp = FastMCP("ai-nexus")
+mcp_app = mcp.http_app(path="/")
+
+app = FastAPI(
+    title="AI Nexus",
+    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan),
+)
+app.mount("/mcp", mcp_app)
+```
+
+MCP 工具改为 `async def`，可直接 await service/proxy 层。
+
+## 10. 配置管理
+
+```python
 class Settings(BaseSettings):
     # 服务
     host: str = "0.0.0.0"
@@ -325,15 +279,10 @@ class Settings(BaseSettings):
     # SQLite
     sqlite_path: str = "data/ai_nexus.db"
 
-    # Qdrant
-    qdrant_url: str = "http://localhost:6333"
-    qdrant_entities_collection: str = "entities"
-    qdrant_rules_collection: str = "rules"
+    # mem0 代理
+    mem0_api_url: str = "http://localhost:8080"
 
-    # Embedding
-    embedding_model: str = "all-MiniLM-L6-v2"  # 或 "BAAI/bge-small-zh-v1.5"
-
-    # OpenViking (可选)
+    # OpenViking 代理（Phase 3+）
     openviking_url: str = "http://localhost:1933"
 
     # Claude API
@@ -342,197 +291,76 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AI_NEXUS_", env_file=".env")
 ```
 
-## 9. MCP 集成方案
-
-```python
-# main.py — FastAPI + MCP http_app
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastmcp import FastMCP
-from fastmcp.utilities.lifespan import combine_lifespans
-
-from ai_nexus.config import Settings
-from ai_nexus.db.sqlite import Database
-
-settings = Settings()
-mcp = FastMCP("ai-nexus")
-
-
-@asynccontextmanager
-async def app_lifespan(app: FastAPI):
-    """管理应用生命周期: 启动时初始化数据库和搜索后端。"""
-    db = Database(settings.sqlite_path)
-    await db.connect()
-    await db.init_schema()
-    app.state.db = db
-    yield
-    await db.disconnect()
-
-
-# 创建 MCP ASGI app
-mcp_app = mcp.http_app(path="/")
-
-# 合并 lifespans
-app = FastAPI(
-    title="AI Nexus",
-    description="AI Business Knowledge OS",
-    version="0.1.0",
-    lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan),
-)
-
-# 挂载 MCP 端点
-app.mount("/mcp", mcp_app)
-```
-
-### MCP 工具定义 (async)
-
-```python
-# mcp/server.py
-from mcp.server.fastmcp import FastMCP, Context
-
-mcp = FastMCP("ai-nexus")
-
-
-@mcp.tool
-async def search_entities(
-    query: str, domain: str | None = None, limit: int = 10
-) -> str:
-    """语义搜索业务实体。"""
-    # 从 app.state 获取 service，或通过依赖注入
-    ...
-```
-
-## 10. 迁移机制
+## 11. 迁移机制
 
 ```
 src/ai_nexus/db/migrations/
-├── 001_init_schema.sql          # 初始 4 张表 + 索引
-├── 002_xxx.sql                  # 未来变更
+├── 001_init_schema.sql
+├── 002_xxx.sql
 └── ...
 ```
 
-**执行逻辑**:
-1. 启动时检查 `schema_version` 表是否存在，不存在则创建
-2. 查询已执行的版本号列表
-3. 按编号顺序执行未执行的 `.sql` 文件
-4. 每个 SQL 文件在一个事务内执行
-5. 成功后记录版本号到 `schema_version` 表
+- 启动时检查 `schema_version` 表，执行未执行的编号 SQL 文件
+- 每个 SQL 文件在一个事务内执行，成功后记录版本号
 
-```python
-# db/migrations 执行逻辑 (伪代码)
-async def run_migrations(db: Database):
-    executed = await db.fetchall("SELECT version FROM schema_version")
-    executed_versions = {row[0] for row in executed}
-    for sql_file in sorted(migrations_dir.glob("*.sql")):
-        version = sql_file.stem.split("_")[0]
-        if version not in executed_versions:
-            sql = sql_file.read_text()
-            await db.execute(sql)  # 事务内
-            await db.execute(
-                "INSERT INTO schema_version (version) VALUES (?)", (version,)
-            )
+## 12. REST API
+
+```
+# 知识图谱 CRUD
+GET/POST       /api/entities
+GET/PUT/DELETE /api/entities/{id}
+GET/POST       /api/relations
+DELETE         /api/relations/{id}
+GET/POST       /api/rules
+GET/PUT/DELETE /api/rules/{id}
+
+# 知识审核
+GET  /api/audit/pending
+POST /api/audit/{id}/approve
+POST /api/audit/{id}/reject
+
+# 开发 Hook
+POST /api/hooks/pre-plan
+POST /api/hooks/pre-commit
+
+# 统一查询
+POST /api/search
+
+# 运维
+POST /api/search/reindex
 ```
 
-## 11. 错误处理与降级
+## 13. 依赖
 
-### 向量搜索降级
+| 操作 | 包 |
+|------|-----|
+| 保留 | `fastapi`, `uvicorn`, `mcp`, `aiosqlite`, `pydantic`, `httpx`, `anthropic`, `pydantic-settings` |
+| 移除 | `qdrant-client`, `fastembed`, `mem0ai`（AI Nexus 不直接依赖 mem0 SDK，通过 httpx 调 API） |
+| 新增 | 无（语义检索通过 httpx 代理调 mem0 REST API） |
 
-```python
-# search_service.py
-async def search(self, query: str, domain: str | None = None, limit: int = 10):
-    if await self.search_provider.health():
-        return await self.search_provider.search(query, limit, filter=build_filter(domain))
-    # 降级: SQLite LIKE 查询
-    return await self._fallback_search(query, domain, limit)
-
-async def _fallback_search(self, query: str, domain: str | None, limit: int):
-    """向量不可用时的降级搜索。"""
-    pattern = f"%{query}%"
-    sql = "SELECT * FROM entities WHERE description LIKE ? AND status = 'approved'"
-    params: list = [pattern]
-    if domain:
-        sql += " AND domain = ?"
-        params.append(domain)
-    sql += " LIMIT ?"
-    params.append(limit)
-    rows = await self.db.fetchall(sql, tuple(params))
-    return [entity_from_row(row) for row in rows]
-```
-
-### Hook 错误处理
-
-- Hook 调用服务失败时，返回降级响应（空上下文/放行），不阻塞开发流程
-- 记录失败日志用于排查
-
-### 事务边界 & Repo 错误处理
-
-- `repos` 层不管理事务，只执行单条 SQL
-- `services` 层负责跨 repo 操作的一致性，需要时在 service 层管理事务
-- `repos` 层抛异常（不返回 Result 类型），service 层捕获并处理
-- 列表操作统一支持分页: `offset: int = 0, limit: int = 50`
-
-### 认证
-
-MVP 阶段不做认证。团队内网部署，信任所有调用方。
-生产化时考虑 API key 或 OAuth。
-
-## 12. 依赖
-
-### 核心依赖
-- `fastapi>=0.115.0` — HTTP 服务
-- `uvicorn>=0.34.0` — ASGI 服务器
-- `mcp>=1.0.0` — MCP Server (FastMCP)
-- `aiosqlite>=0.20.0` — SQLite 异步操作
-- `pydantic>=2.10.0` — 数据模型
-- `pydantic-settings>=2.7.0` — 配置管理
-- `httpx>=0.28.0` — HTTP 客户端
-- `anthropic` — Claude API（extraction_service）
-- `qdrant-client[fastembed]>=1.12.0` — Qdrant 向量数据库 + fastembed 本地 embedding
-
-### 开发依赖
-- `pytest>=8.0` + `pytest-asyncio>=0.24` — 测试
-- `ruff>=0.8.0` — 代码检查
-- `mypy>=1.13` — 类型检查
-
-## 13. 测试策略
+## 14. 测试策略
 
 | 层 | 测试方式 |
 |----|---------|
 | `models` | 单元测试，验证序列化/校验 |
-| `repos` | 集成测试，用真实 SQLite (:memory:) |
-| `search` | 单元测试 mock SearchProvider；集成测试用真实 Qdrant (CI) |
-| `services` | 单元测试 mock repo + search，验证同步和降级逻辑 |
-| `api` | FastAPI TestClient，端到端 |
-| `mcp` | MCP client 测试工具调用 |
-
-关键原则：
-- repos 层用真实 SQLite 内存数据库测试，不 mock
-- services 层 mock repos 和 search，专注业务逻辑
-- search_service 降级逻辑需要专门测试
-- API 层用 TestClient 做集成测试
-- MCP 工具用 FastMCP Client 测试 (或通过 TestClient 调用)
-- 降级测试: mock search_provider.health() 返回 False，验证降级行为
+| `repos` | 集成测试，真实 SQLite (:memory:) |
+| `proxy` | 单元测试 mock mem0 API |
+| `services` | 单元测试 mock repo + proxy，验证路由和降级逻辑 |
+| `api` | FastAPI TestClient |
+| `mcp` | MCP client 测试 |
 
 ## 15. 运维
 
-### Qdrant 部署
-
+### mem0 部署（语义检索后端）
 ```bash
-# 开发环境: docker-compose
-docker compose up -d qdrant
-
-# Qdrant 默认端口
-# - REST API: 6333
-# - gRPC: 6334
+docker compose up -d mem0  # mem0 内部自带向量数据库
 ```
 
 ### 健康检查
+- `GET /health` — FastAPI 服务
+- `mem0_proxy.is_available()` — mem0 可用性
 
-- `GET /health` — FastAPI 服务健康检查
-- `search_provider.health()` — Qdrant 可用性检查 (内部调用)
-- Docker 健康检查已在 docker-compose.yml 中配置
-
-## 14. MVP 路线图
+## 16. MVP 路线图
 
 ### Phase 0（当前）: 基础设施
 - [x] 项目脚手架 + 目录结构
@@ -541,19 +369,18 @@ docker compose up -d qdrant
 - [x] Pydantic 数据模型
 - [x] 配置管理 (pydantic-settings)
 - [x] SQLite 连接管理 (aiosqlite)
-- [x] SearchProvider 抽象接口
 - [x] 基础测试框架 (29 tests)
 - [ ] **MCP 集成修正** (http_app + async tools + combine_lifespans)
-- [ ] **QdrantProvider 实现** (qdrant + fastembed)
+- [ ] **移除 Qdrant/mem0 依赖**，改用 httpx 代理层
 - [ ] **迁移机制** (编号 SQL + schema_version)
 - [ ] **main.py 修正**
-- [ ] **依赖更新** (mem0ai → qdrant-client[fastembed])
 
 ### Phase 1（4 周）: 业务知识图谱
 - [ ] Entity/Relation/Rule CRUD repos
-- [ ] Graph service 业务逻辑（含同步）
+- [ ] Graph service（图遍历查询）
+- [ ] Query service（内部路由 + 降级）
 - [ ] MCP 工具对接真实数据
-- [ ] 语义搜索集成（含降级）
+- [ ] mem0 代理层 (get_session_ctx)
 - [ ] REST API CRUD endpoints
 - [ ] 知识审核工作流
 
@@ -561,11 +388,11 @@ docker compose up -d qdrant
 - [ ] pre_plan hook 实现
 - [ ] pre_commit hook 实现
 - [ ] Claude Code hooks 配置
-- [ ] Hook 脚本 (shell wrapper)
 
-### Phase 3（3 周）: 知识审核工作流
+### Phase 3（3 周）: 知识审核 + 增强
 - [ ] Claude API 知识抽取引擎
-- [ ] 审核工作流 API
-- [ ] 审核通过后向量同步
-- [ ] OpenViking provider (可选)
+- [ ] 编译管道（飞书文档 → 结构化 → 图谱节点）
+- [ ] 知识 Lint（冲突检测、死规则扫描）
+- [ ] 数据飞轮（PR 违规事件回写图谱）
+- [ ] OpenViking 代理工具
 - [ ] 端到端测试
