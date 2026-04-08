@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai_nexus.api.router import router as api_router
 from ai_nexus.config import Settings
 from ai_nexus.db.sqlite import Database
 from ai_nexus.mcp.server import init_services, mcp
@@ -51,21 +52,11 @@ async def db_lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用。"""
-    # MCP Streamable HTTP transport app
-    mcp_http_app = mcp.streamable_http_app()
-
-    # 组合两个 lifespan（DB + MCP）
-    @asynccontextmanager
-    async def combined_lifespan(app: FastAPI):
-        async with db_lifespan(app):
-            async with mcp_http_app.router.lifespan_context(app):
-                yield
-
     app = FastAPI(
         title="AI Nexus",
         description="AI Business Knowledge OS",
         version="0.1.0",
-        lifespan=combined_lifespan,
+        lifespan=db_lifespan,
     )
 
     app.add_middleware(
@@ -75,6 +66,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Include REST API router
+    app.include_router(api_router)
+
+    # Mount MCP separately (outside lifespan for test compatibility)
+    mcp_http_app = mcp.streamable_http_app()
     app.mount("/mcp", mcp_http_app)
 
     @app.get("/health")
