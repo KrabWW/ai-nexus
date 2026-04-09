@@ -117,6 +117,24 @@ async def search(body: SearchBody, query_svc: QuerySvc, graph_svc: GraphSvc):
         return {"results": [r.model_dump() for r in results], "type": "rules"}
 
 
+class ReindexBody(BaseModel):
+    force: bool = False
+
+
+@router.post("/search/reindex")
+async def reindex(body: ReindexBody | None = None):
+    """触发知识库重建索引。
+    在 Phase 0 中仅返回确认信息，完整的索引重建将在后续阶段实现。
+    """
+    if body is None:
+        body = ReindexBody()
+    return {
+        "status": "triggered",
+        "force": body.force,
+        "message": "索引重建已触发，完整功能将在后续阶段实现",
+    }
+
+
 # --- 审核工作流 ---
 
 @router.post("/audit/candidates", response_model=AuditLog, status_code=status.HTTP_201_CREATED)
@@ -177,15 +195,28 @@ async def pre_plan_hook(body: PrePlanRequest, graph_svc: GraphSvc):
 @router.post("/hooks/pre-commit")
 async def pre_commit_hook(body: PreCommitRequest, query_svc: QuerySvc):
     keywords = body.affected_entities or [body.change_description]
-    violations = []
+    errors = []
+    warnings = []
+    infos = []
     for kw in keywords:
         rules = await query_svc.query_rules(kw, limit=5)
         for rule in rules:
-            if rule.status == "approved" and rule.severity == "critical":
-                violations.append({
+            if rule.status == "approved":
+                violation = {
                     "rule": rule.name,
                     "description": rule.description,
-                    "severity": rule.severity,
-                })
-    return {"violations": violations, "passed": len(violations) == 0}
+                    "severity": rule.severity or "info",
+                }
+                if rule.severity == "critical":
+                    errors.append(violation)
+                elif rule.severity == "warning":
+                    warnings.append(violation)
+                else:
+                    infos.append(violation)
+    return {
+        "errors": errors,
+        "warnings": warnings,
+        "infos": infos,
+        "passed": len(errors) == 0,
+    }
 

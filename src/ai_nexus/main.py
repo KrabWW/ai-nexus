@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from ai_nexus.api.console_router import router as console_router
 from ai_nexus.api.graph_router import router as graph_router
 from ai_nexus.api.ingest_router import router as ingest_router
 from ai_nexus.api.lint_router import router as lint_router
@@ -57,7 +58,7 @@ async def db_lifespan(app: FastAPI):
     app.state.audit_repo = audit_repo
     app.state.violation_repo = violation_repo
     app.state.flywheel_service = flywheel_service
-    init_services(graph_service, query_service)
+    init_services(graph_service, query_service, audit_repo)
 
     yield
 
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(graph_router)
     app.include_router(ingest_router)
     app.include_router(violations_router)
+    app.include_router(console_router)
 
     # Mount static files for graph visualization
     static_dir = Path(__file__).parent.parent.parent / "static"

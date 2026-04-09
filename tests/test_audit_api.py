@@ -71,5 +71,8 @@ def test_pre_commit_hook(client):
     })
     assert resp.status_code == 200
     data = resp.json()
-    assert "violations" in data
+    # New format returns graded violations: errors, warnings, infos
+    assert "errors" in data
+    assert "warnings" in data
+    assert "infos" in data
     assert "passed" in data

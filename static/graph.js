@@ -119,6 +119,7 @@ class KnowledgeGraph {
     filterByDomain() {
         if (!this.currentDomain) {
             this.filteredData = JSON.parse(JSON.stringify(this.data));
+            this.filteredData.nodes.forEach(n => n._crossDomain = false);
         } else {
             // Get all nodes in the selected domain
             const domainNodes = new Set(
@@ -136,8 +137,11 @@ class KnowledgeGraph {
                 }
             });
 
-            // Filter nodes and links
-            this.filteredData.nodes = this.data.nodes.filter(n => connectedNodes.has(n.id));
+            // Filter nodes and links, marking cross-domain nodes
+            this.filteredData.nodes = this.data.nodes.filter(n => {
+                n._crossDomain = connectedNodes.has(n.id) && !domainNodes.has(n.id);
+                return connectedNodes.has(n.id);
+            });
             this.filteredData.links = this.data.links.filter(l =>
                 connectedNodes.has(l.source) && connectedNodes.has(l.target)
             );
@@ -213,6 +217,7 @@ class KnowledgeGraph {
         // Node circles
         node.append("circle")
             .attr("r", d => d.type === "rule" ? 20 : 15)
+            .attr("opacity", d => d._crossDomain ? 0.3 : 1.0)
             .attr("class", d => {
                 if (d.type === "rule") {
                     return `rule-node rule-${d.severity || "info"}`;
@@ -225,7 +230,8 @@ class KnowledgeGraph {
             .attr("dy", d => d.type === "rule" ? 30 : 25)
             .text(d => d.name.length > 10 ? d.name.substring(0, 10) + "..." : d.name)
             .attr("fill", "#333")
-            .attr("font-size", "11px");
+            .attr("font-size", "11px")
+            .attr("opacity", d => d._crossDomain ? 0.3 : 1.0);
 
         // Node interactions
         node.on("mouseover", (event, d) => this.showTooltip(event, d))

@@ -72,36 +72,36 @@
 
 ## 8. 补丁 — 缺口修复
 
-- [ ] 8.1 修复 `ai-nexus install-hooks` CLI 入口：在 pyproject.toml 添加 console_scripts 入口，使 `ai-nexus install-hooks` 命令可直接执行
-- [ ] 8.2 修复图谱 domain 过滤器：过滤某 domain 时，跨 domain 的连接实体应显示为半透明淡色（而非完全不透明）
+- [x] 8.1 修复 `ai-nexus install-hooks` CLI 入口：在 pyproject.toml 添加 console_scripts 入口，使 `ai-nexus install-hooks` 命令可直接执行
+- [x] 8.2 修复图谱 domain 过滤器：过滤某 domain 时，跨 domain 的连接实体应显示为半透明淡色（而非完全不透明）
 
 ## 9. 设计文档对齐 — MCP 工具完善
 
-- [ ] 9.1 修复 MCP `submit_knowledge_candidate` 空壳：接入 audit_repo 实际写入审核工作流（当前只返回 JSON 消息）
-- [ ] 9.2 添加 MCP `get_session_ctx` mem0 代理工具：在 MCP Server 暴露 mem0 会话记忆代理，Claude Code 只看一个 MCP 入口（飞书 01-竞品分析要求）
-- [ ] 9.3 修复 `validate_against_rules` 只检查 critical：应检查所有 severity 级别，返回分级警告（error/warning/info）
-- [ ] 9.4 添加 `POST /api/search/reindex` 端点：架构文档 §12 明确列出但未实现
-- [ ] 9.5 添加 MCP 图谱遍历工具：`get_neighbors(entity_id)` 和 `shortest_path(from_id, to_id)`（Graphify 对标）
+- [x] 9.1 修复 MCP `submit_knowledge_candidate` 空壳：接入 audit_repo 实际写入审核工作流（当前只返回 JSON 消息）
+- [x] 9.2 添加 MCP `get_session_ctx` mem0 代理工具：在 MCP Server 暴露 mem0 会话记忆代理，Claude Code 只看一个 MCP 入口（飞书 01-竞品分析要求）
+- [x] 9.3 修复 `validate_against_rules` 只检查 critical：应检查所有 severity 级别，返回分级警告（error/warning/info）
+- [x] 9.4 添加 `POST /api/search/reindex` 端点：架构文档 §12 明确列出但未实现
+- [x] 9.5 添加 MCP 图谱遍历工具：`get_neighbors(entity_id)` 和 `shortest_path(from_id, to_id)`（Graphify 对标）
 
 ## 10. Graphify 对标 — 增强特性
 
-- [ ] 10.1 添加知识来源可信度标签：每条抽取结果标注 EXTRACTED（直接提取）/ INFERRED（推断）/ AMBIGUOUS（待确认），区别于 confidence 分数
-- [ ] 10.2 实现 God nodes 分析：自动识别图谱中度最高的关键节点，输出 "哪些概念是一切连接的枢纽"
-- [ ] 10.3 实现 Surprising connections 发现：跨 domain 的意外关联，按复合评分排序（类似 Graphify 的 surprising connections）
-- [ ] 10.4 添加 Git hooks 集成：post-commit/post-checkout 自动触发知识图谱更新（`graphify hook install` 模式）
-- [ ] 10.5 实现 Leiden 社区发现：自动聚类图谱节点，不依赖 embedding，基于图拓扑边密度
+- [x] 10.1 添加知识来源可信度标签：每条抽取结果标注 EXTRACTED（直接提取）/ INFERRED（推断）/ AMBIGUOUS（待确认），区别于 confidence 分数
+- [x] 10.2 实现 God nodes 分析：自动识别图谱中度最高的关键节点，输出 "哪些概念是一切连接的枢纽"
+- [x] 10.3 实现 Surprising connections 发现：跨 domain 的意外关联，按复合评分排序（类似 Graphify 的 surprising connections）
+- [x] 10.4 添加 Git hooks 集成：post-commit/post-checkout 自动触发知识图谱更新（`graphify hook install` 模式）
+- [x] 10.5 实现 Leiden 社区发现：自动聚类图谱节点，不依赖 embedding，基于图拓扑边密度
 
 ## 11. Phase 5 — Web Console
 
-- [ ] 11.1 搭建 Web Console 基础：基于 FastAPI + Jinja2 模板或 React SPA，统一管理界面入口
-- [ ] 11.2 实现实体管理页面：列表 + 搜索 + 新建 + 编辑 + 删除，支持按 domain 过滤
-- [ ] 11.3 实现规则管理页面：列表 + 搜索 + severity 过滤 + 新建 + 编辑，显示置信度和来源
-- [ ] 11.4 实现关系管理页面：可视化关系列表 + 新建 + 删除，显示源/目标实体
-- [ ] 11.5 实现审核工作流页面：候选项列表 → approve/reject 操作 + 审核历史记录
-- [ ] 11.6 实现知识 Lint 仪表盘：展示冲突规则、死规则、覆盖缺口的可视化报告
-- [ ] 11.7 实现导入管理页面：飞书空间导入 + 单文档导入 + 导入历史追踪（ingest_tracking）
-- [ ] 11.8 实现系统设置页面：配置管理 + 健康检查 + mem0/OpenViking 连接状态
-- [ ] 11.9 提交：`feat(console): add Web Console for knowledge graph management`
+- [x] 11.1 搭建 Web Console 基础：基于 FastAPI + Jinja2 模板或 React SPA，统一管理界面入口
+- [x] 11.2 实现实体管理页面：列表 + 搜索 + 新建 + 编辑 + 删除，支持按 domain 过滤
+- [x] 11.3 实现规则管理页面：列表 + 搜索 + severity 过滤 + 新建 + 编辑，显示置信度和来源
+- [x] 11.4 实现关系管理页面：可视化关系列表 + 新建 + 删除，显示源/目标实体
+- [x] 11.5 实现审核工作流页面：候选项列表 → approve/reject 操作 + 审核历史记录
+- [x] 11.6 实现知识 Lint 仪表盘：展示冲突规则、死规则、覆盖缺口的可视化报告
+- [x] 11.7 实现导入管理页面：飞书空间导入 + 单文档导入 + 导入历史追踪（ingest_tracking）
+- [x] 11.8 实现系统设置页面：配置管理 + 健康检查 + mem0/OpenViking 连接状态
+- [x] 11.9 提交：`feat(console): add Web Console for knowledge graph management`
 
 ## 12. Graphify 功能性对比 — 深度分析
 

@@ -18,6 +18,8 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "httpx>=0.28.0",
     "aiosqlite>=0.20.0",
+    "jinja2>=3.1.0",
+    "igraph>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +32,7 @@ dev = [
 
 [project.scripts]
 ai-nexus = "ai_nexus.mcp.server:main"
+ai-nexus-install-hooks = "ai_nexus.hooks.install:main"
 
 [tool.ruff]
 target-version = "py311"
