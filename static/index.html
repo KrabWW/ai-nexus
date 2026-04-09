@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Nexus - Knowledge Graph Visualization</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/graph.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1><i class="fas fa-project-diagram"></i> AI Nexus 知识图谱</h1>
+            <div class="controls">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="搜索实体或规则...">
+                </div>
+                <select id="domainFilter" class="domain-select">
+                    <option value="">所有域</option>
+                </select>
+                <button id="resetBtn" class="btn btn-secondary">
+                    <i class="fas fa-redo"></i> 重置
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Graph Area -->
+            <div class="graph-container">
+                <svg id="graph"></svg>
+                <div id="tooltip" class="tooltip"></div>
+            </div>
+
+            <!-- Detail Panel -->
+            <aside id="detailPanel" class="detail-panel hidden">
+                <button id="closePanel" class="close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div id="panelContent"></div>
+            </aside>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <span class="legend-color entity-node"></span>
+                <span>实体</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color rule-node rule-info"></span>
+                <span>规则 (Info)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color rule-node rule-warning"></span>
+                <span>规则 (Warning)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color rule-node rule-critical"></span>
+                <span>规则 (Critical)</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/static/graph.js"></script>
+</body>
+</html>
