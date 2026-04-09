@@ -18,6 +18,9 @@ class Settings(BaseSettings):
         mem0_api_url: Base URL for Mem0 search service
         openviking_url: Base URL for OpenViking search service
         anthropic_api_key: API key for Anthropic Claude (required for AI features)
+        feishu_app_id: Feishu/Lark app ID for document ingestion
+        feishu_app_secret: Feishu/Lark app secret for document ingestion
+        feishu_base_url: Base URL for Feishu Open API
 
     Environment variables:
         All settings can be overridden via environment variables prefixed with
@@ -37,6 +40,11 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str = ""
+
+    # Feishu/Lark Integration
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_base_url: str = "https://open.feishu.cn/open-apis"
 
     model_config = SettingsConfigDict(
         env_prefix="AI_NEXUS_",
