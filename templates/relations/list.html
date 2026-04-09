@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}关系管理 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🔗 关系管理</h1>
+    <p>管理实体之间的关系连接</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">关系列表</h2>
+        <a href="/console/relations/new" class="btn btn-primary">+ 新建关系</a>
+    </div>
+
+    {% if relations %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>源实体</th>
+                    <th>关系类型</th>
+                    <th>目标实体</th>
+                    <th>状态</th>
+                    <th>权重</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for relation in relations %}
+                <tr>
+                    <td>{{ relation.id }}</td>
+                    <td>
+                        {% if relation.source_entity_id in entity_map %}
+                            <strong>{{ entity_map[relation.source_entity_id].name }}</strong>
+                            <br><small style="color: #64748b;">ID: {{ relation.source_entity_id }}</small>
+                        {% else %}
+                            <span style="color: #ef4444;">未知实体 ({{ relation.source_entity_id }})</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge badge-info">{{ relation.relation_type }}</span>
+                        {% if relation.description %}
+                        <br><small style="color: #64748b;">{{ relation.description[:30] }}{% if relation.description|length > 30 %}...{% endif %}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if relation.target_entity_id in entity_map %}
+                            <strong>{{ entity_map[relation.target_entity_id].name }}</strong>
+                            <br><small style="color: #64748b;">ID: {{ relation.target_entity_id }}</small>
+                        {% else %}
+                            <span style="color: #ef4444;">未知实体 ({{ relation.target_entity_id }})</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if relation.status == 'approved' else ('error' if relation.status == 'rejected' else 'warning') }}">
+                            {{ relation.status }}
+                        </span>
+                    </td>
+                    <td>{{ relation.weight }}</td>
+                    <td>
+                        <form method="post" action="/console/relations/{{ relation.id }}/delete" style="display: inline;" onsubmit="return confirm('确认删除此关系？');">
+                            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔗</div>
+        <p>暂无关系</p>
+        <a href="/console/relations/new" class="btn btn-primary">创建第一个关系</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

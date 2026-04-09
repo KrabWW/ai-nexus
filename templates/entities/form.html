@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑实体' if entity else '新建实体' }} - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ '✏️ 编辑实体' if entity else '+ 新建实体' }}</h1>
+    <p>{{ '修改实体信息' if entity else '创建新的业务实体' }}</p>
+</div>
+
+<div class="form-container">
+    <form method="post" action="{% if entity %}/console/entities/{{ entity.id }}/edit{% else %}/console/entities{% endif %}">
+        <div class="form-group">
+            <label for="name">实体名称 *</label>
+            <input type="text" id="name" name="name" value="{{ entity.name if entity else '' }}" required>
+        </div>
+
+        <div class="form-group">
+            <label for="type">实体类型 *</label>
+            <select id="type" name="type" required>
+                <option value="">选择类型</option>
+                <option value="person" {% if entity and entity.type == 'person' %}selected{% endif %}>人员</option>
+                <option value="organization" {% if entity and entity.type == 'organization' %}selected{% endif %}>组织</option>
+                <option value="concept" {% if entity and entity.type == 'concept' %}selected{% endif %}>概念</option>
+                <option value="system" {% if entity and entity.type == 'system' %}selected{% endif %}>系统</option>
+                <option value="document" {% if entity and entity.type == 'document' %}selected{% endif %}>文档</option>
+                <option value="other" {% if entity and entity.type == 'other' %}selected{% endif %}>其他</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="domain">业务领域 *</label>
+            <input type="text" id="domain" name="domain" value="{{ entity.domain if entity else '' }}" required placeholder="例如：研发、产品、运维">
+        </div>
+
+        <div class="form-group">
+            <label for="description">描述</label>
+            <textarea id="description" name="description" rows="3">{{ entity.description if entity else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="entity_status">状态</label>
+            <select id="entity_status" name="entity_status">
+                <option value="approved" {% if not entity or entity.status == 'approved' %}selected{% endif %}>已批准</option>
+                <option value="pending" {% if entity and entity.status == 'pending' %}selected{% endif %}>待审核</option>
+                <option value="rejected" {% if entity and entity.status == 'rejected' %}selected{% endif %}>已拒绝</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="source">来源</label>
+            <input type="text" id="source" name="source" value="{{ entity.source if entity else 'manual' }}">
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ '更新实体' if entity else '创建实体' }}</button>
+            <a href="/console/entities" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

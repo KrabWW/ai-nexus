@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}仪表板 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👋 欢迎使用 AI Nexus 管理控制台</h1>
+    <p>业务知识图谱的统一管理界面</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ entities|length }}</div>
+        <div class="stat-label">实体总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ rules|length }}</div>
+        <div class="stat-label">规则总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ relations|length }}</div>
+        <div class="stat-label">关系总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ pending_audits|length }}</div>
+        <div class="stat-label">待审核项</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">最新实体</h2>
+            <a href="/console/entities" class="btn btn-sm btn-secondary">查看全部</a>
+        </div>
+        {% if entities %}
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>领域</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entity in entities[:5] %}
+                <tr>
+                    <td>{{ entity.name }}</td>
+                    <td><span class="badge badge-info">{{ entity.type }}</span></td>
+                    <td>{{ entity.domain }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">暂无实体</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">最新规则</h2>
+            <a href="/console/rules" class="btn btn-sm btn-secondary">查看全部</a>
+        </div>
+        {% if rules %}
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>严重性</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in rules[:5] %}
+                <tr>
+                    <td>{{ rule.name }}</td>
+                    <td>
+                        <span class="badge badge-{{ rule.severity }}">
+                            {{ { 'info': 'info', 'warning': 'warning', 'error': 'error', 'critical': 'critical' }.get(rule.severity, 'info') }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if rule.status == 'approved' else 'warning' }}">
+                            {{ rule.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">暂无规则</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if pending_audits %}
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">⚠️ 待审核项</h2>
+        <a href="/console/audit" class="btn btn-sm btn-primary">前往审核</a>
+    </div>
+    <p>您有 <strong>{{ pending_audits|length }}</strong> 项待审核的知识条目需要处理。</p>
+</div>
+{% endif %}
+{% endblock %}

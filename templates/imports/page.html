@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}导入管理 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📥 导入管理</h1>
+    <p>从飞书知识空间或单文档导入业务知识</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+    <!-- 飞书导入 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">🪶 飞书知识空间导入</h2>
+        </div>
+        <form method="post" action="/console/imports/feishu">
+            <div class="form-group">
+                <label for="space_id">飞书知识空间 ID *</label>
+                <input type="text" id="space_id" name="space_id" required placeholder="输入飞书知识空间 ID">
+                <small style="color: #64748b;">从飞书知识空间 URL 中获取</small>
+            </div>
+            <div class="form-group">
+                <label for="domain_hint">领域提示 (可选)</label>
+                <input type="text" id="domain_hint" name="domain_hint" placeholder="例如：研发、产品">
+            </div>
+            <button type="submit" class="btn btn-primary">开始导入</button>
+        </form>
+        <p style="margin-top: 12px; font-size: 14px; color: #64748b;">
+            批量导入飞书知识空间中的所有文档，AI 将自动提取实体、关系和规则，并提交到审核工作流。
+        </p>
+    </div>
+
+    <!-- 单文档导入 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">📄 单文档导入</h2>
+        </div>
+        <form method="post" action="/console/imports/document">
+            <div class="form-group">
+                <label for="title">文档标题 *</label>
+                <input type="text" id="title" name="title" required placeholder="输入文档标题">
+            </div>
+            <div class="form-group">
+                <label for="content">文档内容 *</label>
+                <textarea id="content" name="content" rows="6" required placeholder="粘贴文档内容..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="domain_hint">领域提示 (可选)</label>
+                <input type="text" id="domain_hint" name="domain_hint" placeholder="例如：研发、产品">
+            </div>
+            <button type="submit" class="btn btn-primary">导入文档</button>
+        </form>
+        <p style="margin-top: 12px; font-size: 14px; color: #64748b;">
+            从单个文档中提取业务知识，AI 将自动识别实体、关系和规则。
+        </p>
+    </div>
+</div>
+
+<!-- 导入历史说明 -->
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">📊 导入状态</h2>
+    </div>
+    <p>导入任务将异步执行，结果可在 <a href="/console/audit" style="color: var(--primary-color);">审核工作流</a> 中查看。</p>
+    <div style="margin-top: 12px; padding: 12px; background-color: #f1f5f9; border-radius: 4px;">
+        <strong>导入流程：</strong>
+        <ol style="margin: 8px 0 0 20px;">
+            <li>从飞书/文档获取内容</li>
+            <li>调用 Claude AI 提取知识（实体、关系、规则）</li>
+            <li>将提取结果提交到审核工作流</li>
+            <li>在审核页面批准/拒绝候选条目</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">⚙️ 飞书配置</h2>
+    </div>
+    <p>飞书导入功能需要在配置中设置以下参数：</p>
+    <ul style="margin: 12px 0 0 20px; line-height: 1.8;">
+        <li><code>feishu_app_id</code> - 飞书应用 ID</li>
+        <li><code>feishu_app_secret</code> - 飞书应用密钥</li>
+        <li><code>feishu_base_url</code> - 飞书 API 基础 URL</li>
+        <li><code>anthropic_api_key</code> - Claude API 密钥</li>
+    </ul>
+</div>
+{% endblock %}

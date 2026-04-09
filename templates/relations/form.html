@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}新建关系 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>+ 新建关系</h1>
+    <p>在两个实体之间创建关系连接</p>
+</div>
+
+<div class="form-container">
+    <form method="post" action="/console/relations">
+        <div class="form-group">
+            <label for="source_entity_id">源实体 *</label>
+            <select id="source_entity_id" name="source_entity_id" required>
+                <option value="">选择源实体</option>
+                {% for entity in entities %}
+                <option value="{{ entity.id }}">{{ entity.name }} (ID: {{ entity.id }}) - {{ entity.type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="relation_type">关系类型 *</label>
+            <input type="text" id="relation_type" name="relation_type" required placeholder="例如：depends_on, owns, related_to">
+            <small style="color: #64748b;">常见类型：depends_on（依赖）、owns（拥有）、related_to（相关）、manages（管理）</small>
+        </div>
+
+        <div class="form-group">
+            <label for="target_entity_id">目标实体 *</label>
+            <select id="target_entity_id" name="target_entity_id" required>
+                <option value="">选择目标实体</option>
+                {% for entity in entities %}
+                <option value="{{ entity.id }}">{{ entity.name }} (ID: {{ entity.id }}) - {{ entity.type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="description">描述</label>
+            <textarea id="description" name="description" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="weight">权重 (0.0 - 1.0)</label>
+            <input type="number" id="weight" name="weight" min="0" max="1" step="0.1" value="1.0">
+            <small style="color: #64748b;">关系的重要程度或置信度</small>
+        </div>
+
+        <div class="form-group">
+            <label for="relation_status">状态</label>
+            <select id="relation_status" name="relation_status">
+                <option value="approved" selected>已批准</option>
+                <option value="pending">待审核</option>
+                <option value="rejected">已拒绝</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="source">来源</label>
+            <input type="text" id="source" name="source" value="manual">
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">创建关系</button>
+            <a href="/console/relations" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

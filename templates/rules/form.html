@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑规则' if rule else '新建规则' }} - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ '✏️ 编辑规则' if rule else '+ 新建规则' }}</h1>
+    <p>{{ '修改业务规则' if rule else '创建新的业务规则' }}</p>
+</div>
+
+<div class="form-container">
+    <form method="post" action="{% if rule %}/console/rules/{{ rule.id }}/edit{% else %}/console/rules{% endif %}">
+        <div class="form-group">
+            <label for="name">规则名称 *</label>
+            <input type="text" id="name" name="name" value="{{ rule.name if rule else '' }}" required>
+        </div>
+
+        <div class="form-group">
+            <label for="description">规则描述 *</label>
+            <textarea id="description" name="description" rows="3" required>{{ rule.description if rule else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="domain">业务领域 *</label>
+            <input type="text" id="domain" name="domain" value="{{ rule.domain if rule else '' }}" required placeholder="例如：研发、产品、运维">
+        </div>
+
+        <div class="form-group">
+            <label for="severity">严重性 *</label>
+            <select id="severity" name="severity" required>
+                <option value="info" {% if not rule or rule.severity == 'info' %}selected{% endif %}>info - 信息提示</option>
+                <option value="warning" {% if rule and rule.severity == 'warning' %}selected{% endif %}>warning - 警告</option>
+                <option value="error" {% if rule and rule.severity == 'error' %}selected{% endif %}>error - 错误</option>
+                <option value="critical" {% if rule and rule.severity == 'critical' %}selected{% endif %}>critical - 严重</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="rule_status">状态</label>
+            <select id="rule_status" name="rule_status">
+                <option value="pending" {% if not rule or rule.status == 'pending' %}selected{% endif %}>待审核</option>
+                <option value="approved" {% if rule and rule.status == 'approved' %}selected{% endif %}>已批准</option>
+                <option value="rejected" {% if rule and rule.status == 'rejected' %}selected{% endif %}>已拒绝</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="confidence">置信度 (0.0 - 1.0)</label>
+            <input type="number" id="confidence" name="confidence" min="0" max="1" step="0.01" value="{{ rule.confidence if rule else 0.0 }}">
+            <small style="color: #64748b;">AI 提取规则的置信度，手动创建设为 0</small>
+        </div>
+
+        <div class="form-group">
+            <label for="source">来源</label>
+            <select id="source" name="source">
+                <option value="manual" {% if not rule or rule.source == 'manual' %}selected{% endif %}>手动创建</option>
+                <option value="ai_extracted" {% if rule and rule.source == 'ai_extracted' %}selected{% endif %}>AI 提取</option>
+                <option value="imported" {% if rule and rule.source == 'imported' %}selected{% endif %}>导入</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="conditions">条件 (JSON 格式，可选)</label>
+            <textarea id="conditions" name="conditions" rows="3" placeholder='{"field": "value"}'>{% if rule and rule.conditions %}{{ rule.conditions }}{% endif %}</textarea>
+            <small style="color: #64748b;">规则逻辑条件的 JSON 表示</small>
+        </div>
+
+        <div class="form-group">
+            <label for="related_entity_ids">关联实体 ID (逗号分隔)</label>
+            <input type="text" id="related_entity_ids" name="related_entity_ids" value="{{ rule.related_entity_ids | join(', ') if rule.related_entity_ids else '' }}" placeholder="1, 2, 3">
+            <small style="color: #64748b;">此规则关联的实体 ID 列表</small>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ '更新规则' if rule else '创建规则' }}</button>
+            <a href="/console/rules" class="btn btn-secondary">取消</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

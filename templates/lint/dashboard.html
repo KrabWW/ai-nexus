@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}知识 Lint - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🔍 知识健康检查</h1>
+    <p>检测知识图谱中的冲突、死规则和覆盖缺口</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card" style="border-left: 4px solid #ef4444;">
+        <div class="stat-value" style="color: #ef4444;">{{ report.conflicts|length }}</div>
+        <div class="stat-label">冲突规则</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid #f59e0b;">
+        <div class="stat-value" style="color: #f59e0b;">{{ report.dead_rules|length }}</div>
+        <div class="stat-label">死规则 (30天未引用)</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid #3b82f6;">
+        <div class="stat-value" style="color: #3b82f6;">{{ report.coverage_gaps|length }}</div>
+        <div class="stat-label">覆盖缺口</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: #10b981;">{{ '健康' if (report.conflicts|length == 0 and report.dead_rules|length == 0) else '需关注' }}</div>
+        <div class="stat-label">整体状态</div>
+    </div>
+</div>
+
+<!-- 冲突规则 -->
+<div class="lint-section">
+    <h3>⚠️ 冲突规则</h3>
+    {% if report.conflicts %}
+    <div class="card">
+        {% for conflict in report.conflicts %}
+        <div class="lint-item conflict">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <strong>{{ conflict.rule_1_name }}</strong>
+                    <span style="color: #64748b;"> vs </span>
+                    <strong>{{ conflict.rule_2_name }}</strong>
+                    <br>
+                    <span class="badge badge-info">{{ conflict.domain }}</span>
+                </div>
+                <span class="badge badge-critical">冲突</span>
+            </div>
+            <p style="margin-top: 8px; color: #64748b;">{{ conflict.reason }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="color: #10b981;">✅ 未发现规则冲突</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 死规则 -->
+<div class="lint-section">
+    <h3>💀 死规则 (30天未引用)</h3>
+    {% if report.dead_rules %}
+    <div class="card">
+        {% for rule in report.dead_rules %}
+        <div class="lint-item dead-rule">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <strong>{{ rule.rule_name }}</strong>
+                    <br>
+                    <span class="badge badge-info">{{ rule.domain }}</span>
+                    <small style="color: #64748b;">创建于 {{ rule.created_at }}</small>
+                </div>
+                <span class="badge badge-warning">{{ rule.days_since_creation }} 天</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="color: #10b981;">✅ 未发现死规则</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 覆盖缺口 -->
+<div class="lint-section">
+    <h3>🕳️ 覆盖缺口 (有实体无规则)</h3>
+    {% if report.coverage_gaps %}
+    <div class="card">
+        {% for gap in report.coverage_gaps %}
+        <div class="lint-item coverage-gap">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <strong>{{ gap.domain }}</strong>
+                    <span class="badge badge-info">{{ gap.entity_count }} 个实体</span>
+                    <br>
+                    <small style="color: #64748b;">实体: {{ gap.entities|join(', ') }}</small>
+                </div>
+                <span class="badge badge-warning">需补充规则</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="color: #10b981;">✅ 所有领域都有规则覆盖</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">📖 Lint 说明</h2>
+    </div>
+    <div style="line-height: 1.6;">
+        <p><strong>冲突规则：</strong>同一领域内可能互相矛盾的规则，需要人工审查并解决。</p>
+        <p><strong>死规则：</strong>已批准但30天内未被审核日志引用的规则，可能是过期或无效的。</p>
+        <p><strong>覆盖缺口：</strong>包含实体但没有相应规则的领域，需要补充治理规则。</p>
+        <p style="margin-top: 12px;"><small>报告生成时间: {{ report.generated_at }}</small></p>
+    </div>
+</div>
+{% endblock %}

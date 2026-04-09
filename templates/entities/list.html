@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}实体管理 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🏢 实体管理</h1>
+    <p>管理业务实体，包括人员、组织、概念等</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">实体列表</h2>
+        <a href="/console/entities/new" class="btn btn-primary">+ 新建实体</a>
+    </div>
+
+    <form method="get" class="filters">
+        <div class="filter-group">
+            <label>搜索</label>
+            <input type="search" name="search" value="{{ search_query or '' }}" placeholder="搜索名称或描述...">
+        </div>
+        <div class="filter-group">
+            <label>领域</label>
+            <select name="domain">
+                <option value="">全部领域</option>
+                {% for domain in domains %}
+                <option value="{{ domain }}" {% if selected_domain == domain %}selected{% endif %}>{{ domain }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group" style="justify-content: flex-end;">
+            <button type="submit" class="btn btn-primary">筛选</button>
+            <a href="/console/entities" class="btn btn-secondary">重置</a>
+        </div>
+    </form>
+
+    {% if entities %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>领域</th>
+                    <th>状态</th>
+                    <th>来源</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entity in entities %}
+                <tr>
+                    <td>{{ entity.id }}</td>
+                    <td>
+                        <strong>{{ entity.name }}</strong>
+                        {% if entity.description %}
+                        <br><small style="color: #64748b;">{{ entity.description[:50] }}{% if entity.description|length > 50 %}...{% endif %}</small>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge badge-info">{{ entity.type }}</span></td>
+                    <td>{{ entity.domain }}</td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if entity.status == 'approved' else ('error' if entity.status == 'rejected' else 'warning') }}">
+                            {{ entity.status }}
+                        </span>
+                    </td>
+                    <td>{{ entity.source }}</td>
+                    <td>
+                        <a href="/console/entities/{{ entity.id }}/edit" class="btn btn-sm btn-secondary">编辑</a>
+                        <form method="post" action="/console/entities/{{ entity.id }}/delete" style="display: inline;" onsubmit="return confirm('确认删除此实体？');">
+                            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🏢</div>
+        <p>暂无实体</p>
+        <a href="/console/entities/new" class="btn btn-primary">创建第一个实体</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

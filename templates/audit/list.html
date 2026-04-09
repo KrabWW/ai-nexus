@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}审核工作流 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>✅ 审核工作流</h1>
+    <p>审核待批准的知识条目，查看审核历史</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">待审核项</h2>
+            <span class="badge badge-warning">{{ pending|length }} 项</span>
+        </div>
+
+        {% if pending %}
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            {% for item in pending %}
+            <div class="audit-pending" style="padding: 12px; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <strong>{{ item.table_name }}</strong>
+                        <small style="display: block; color: #64748b;">记录 ID: {{ item.record_id }}</small>
+                        {% if item.id %}<small style="display: block; color: #64748b;">审核 ID: {{ item.id }}</small>{% endif %}
+                        {% if item.created_at %}<small style="display: block; color: #64748b;">创建时间: {{ item.created_at }}</small>{% endif %}
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                        <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-success">✓ 批准</button>
+                        </form>
+                        <form method="post" action="/console/audit/{{ item.id }}/reject" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-danger">✗ 拒绝</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">🎉 暂无待审核项</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">审核历史</h2>
+            <span class="badge badge-info">{{ audit_history|length }} 条记录</span>
+        </div>
+
+        {% if audit_history %}
+        <div style="display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto;">
+            {% for log in audit_history %}
+            <div class="audit-{{ log.action }}" style="padding: 10px; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>
+                        <strong>{{ log.action }}</strong>
+                        <small style="color: #64748b;">{{ log.table_name }}#{{ log.record_id }}</small>
+                    </span>
+                    <small style="color: #64748b;">{{ log.reviewer }}</small>
+                </div>
+                {% if log.created_at %}
+                <small style="color: #64748b;">{{ log.created_at }}</small>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">暂无审核历史</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">📖 审核说明</h2>
+    </div>
+    <div style="line-height: 1.6;">
+        <p><strong>待审核项：</strong>由 AI 提取或导入产生的知识条目，需要人工审核后才能生效。</p>
+        <p><strong>批准：</strong>将条目标记为已批准，使其在知识图谱中生效。</p>
+        <p><strong>拒绝：</strong>拒绝条目，不会将其添加到知识图谱。</p>
+        <p><strong>审核历史：</strong>记录所有审核操作，便于追溯和审计。</p>
+    </div>
+</div>
+{% endblock %}

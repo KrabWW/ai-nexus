@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Nexus 管理控制台{% endblock %}</title>
+    <link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>AI Nexus</h1>
+            <span>业务知识治理层</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/console/" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+                <span>📊 仪表板</span>
+            </a>
+            <a href="/console/entities" class="nav-item {% if active_page == 'entities' %}active{% endif %}">
+                <span>🏢 实体管理</span>
+            </a>
+            <a href="/console/rules" class="nav-item {% if active_page == 'rules' %}active{% endif %}">
+                <span>📜 规则管理</span>
+            </a>
+            <a href="/console/relations" class="nav-item {% if active_page == 'relations' %}active{% endif %}">
+                <span>🔗 关系管理</span>
+            </a>
+            <a href="/console/audit" class="nav-item {% if active_page == 'audit' %}active{% endif %}">
+                <span>✅ 审核工作流</span>
+            </a>
+            <a href="/console/lint" class="nav-item {% if active_page == 'lint' %}active{% endif %}">
+                <span>🔍 知识 Lint</span>
+            </a>
+            <a href="/console/imports" class="nav-item {% if active_page == 'imports' %}active{% endif %}">
+                <span>📥 导入管理</span>
+            </a>
+            <a href="/console/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+                <span>⚙️ 系统设置</span>
+            </a>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

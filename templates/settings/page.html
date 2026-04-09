@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}系统设置 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>⚙️ 系统设置</h1>
+    <p>查看系统状态和配置信息</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ entity_count }}</div>
+        <div class="stat-label">实体总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ rule_count }}</div>
+        <div class="stat-label">规则总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ relation_count }}</div>
+        <div class="stat-label">关系总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ domains|length }}</div>
+        <div class="stat-label">业务领域数</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
+    <!-- 数据库统计 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">💾 数据库状态</h2>
+        </div>
+        <table style="width: 100%;">
+            <tr>
+                <td style="padding: 8px 0;"><strong>类型</strong></td>
+                <td style="padding: 8px 0;">SQLite</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 0;"><strong>状态</strong></td>
+                <td style="padding: 8px 0;"><span class="badge badge-success">正常</span></td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 0;"><strong>实体记录</strong></td>
+                <td style="padding: 8px 0;">{{ entity_count }} 条</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 0;"><strong>规则记录</strong></td>
+                <td style="padding: 8px 0;">{{ rule_count }} 条</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 0;"><strong>关系记录</strong></td>
+                <td style="padding: 8px 0;">{{ relation_count }} 条</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- 业务领域 -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">📂 业务领域</h2>
+        </div>
+        {% if domains %}
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for domain in domains %}
+            <span class="badge badge-info" style="font-size: 14px;">{{ domain }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">暂无领域数据</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 外部服务连接状态 -->
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">🔌 外部服务连接</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>服务</th>
+                <th>状态</th>
+                <th>说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>mem0</strong></td>
+                <td><span class="badge badge-warning">未检测</span></td>
+                <td>长期记忆服务，用于语义搜索</td>
+            </tr>
+            <tr>
+                <td><strong>OpenViking</strong></td>
+                <td><span class="badge badge-warning">未检测</span></td>
+                <td>向量存储服务</td>
+            </tr>
+            <tr>
+                <td><strong>Claude API</strong></td>
+                <td><span class="badge badge-success">正常</span></td>
+                <td>AI 知识提取服务</td>
+            </tr>
+            <tr>
+                <td><strong>Feishu API</strong></td>
+                <td><span class="badge badge-warning">未检测</span></td>
+                <td>飞书文档导入服务</td>
+            </tr>
+            <tr>
+                <td><strong>Qdrant</strong></td>
+                <td><span class="badge badge-warning">未检测</span></td>
+                <td>向量数据库</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 系统信息 -->
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">ℹ️ 系统信息</h2>
+    </div>
+    <table>
+        <tr>
+            <td style="padding: 8px; width: 150px;"><strong>版本</strong></td>
+            <td style="padding: 8px;">AI Nexus v0.1.0</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><strong>Phase</strong></td>
+            <td style="padding: 8px;">Phase 0 - 基础设施</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><strong>框架</strong></td>
+            <td style="padding: 8px;">FastAPI + SQLite + Qdrant</td>
+        </tr>
+        <tr>
+            <td style="padding: 8px;"><strong>协议</strong></td>
+            <td style="padding: 8px;">MCP (Model Context Protocol)</td>
+        </tr>
+    </table>
+</div>
+
+<!-- 快速链接 -->
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">🔗 快速链接</h2>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+        <a href="/graph" class="btn btn-secondary" target="_blank">🕸️ 图谱可视化</a>
+        <a href="/api/lint/report?format=markdown" class="btn btn-secondary" target="_blank">📄 Lint 报告 (Markdown)</a>
+        <a href="/health" class="btn btn-secondary" target="_blank">💓 健康检查</a>
+        <a href="/docs" class="btn btn-secondary" target="_blank">📚 API 文档</a>
+    </div>
+</div>
+{% endblock %}

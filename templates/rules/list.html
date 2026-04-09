@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}规则管理 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📜 规则管理</h1>
+    <p>管理业务规则，包括约束、验证逻辑和治理策略</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">规则列表</h2>
+        <a href="/console/rules/new" class="btn btn-primary">+ 新建规则</a>
+    </div>
+
+    <form method="get" class="filters">
+        <div class="filter-group">
+            <label>搜索</label>
+            <input type="search" name="search" value="{{ search_query or '' }}" placeholder="搜索规则名称或描述...">
+        </div>
+        <div class="filter-group">
+            <label>领域</label>
+            <select name="domain">
+                <option value="">全部领域</option>
+                {% for domain in domains %}
+                <option value="{{ domain }}" {% if selected_domain == domain %}selected{% endif %}>{{ domain }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>严重性</label>
+            <select name="severity">
+                <option value="">全部级别</option>
+                <option value="info" {% if selected_severity == 'info' %}selected{% endif %}>info</option>
+                <option value="warning" {% if selected_severity == 'warning' %}selected{% endif %}>warning</option>
+                <option value="error" {% if selected_severity == 'error' %}selected{% endif %}>error</option>
+                <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>critical</option>
+            </select>
+        </div>
+        <div class="filter-group" style="justify-content: flex-end;">
+            <button type="submit" class="btn btn-primary">筛选</button>
+            <a href="/console/rules" class="btn btn-secondary">重置</a>
+        </div>
+    </form>
+
+    {% if rules %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>领域</th>
+                    <th>严重性</th>
+                    <th>状态</th>
+                    <th>置信度</th>
+                    <th>来源</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in rules %}
+                <tr>
+                    <td>{{ rule.id }}</td>
+                    <td>
+                        <strong>{{ rule.name }}</strong>
+                        {% if rule.description %}
+                        <br><small style="color: #64748b;">{{ rule.description[:60] }}{% if rule.description|length > 60 %}...{% endif %}</small>
+                        {% endif %}
+                    </td>
+                    <td>{{ rule.domain }}</td>
+                    <td>
+                        <span class="badge badge-{{ rule.severity }}">
+                            {{ rule.severity }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if rule.status == 'approved' else ('error' if rule.status == 'rejected' else 'warning') }}">
+                            {{ rule.status }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if rule.confidence > 0 %}
+                        <span class="badge" style="background-color: #e0f2fe; color: #0369a1;">{{ (rule.confidence * 100)|int }}%</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ rule.source }}</td>
+                    <td>
+                        <a href="/console/rules/{{ rule.id }}/edit" class="btn btn-sm btn-secondary">编辑</a>
+                        <form method="post" action="/console/rules/{{ rule.id }}/delete" style="display: inline;" onsubmit="return confirm('确认删除此规则？');">
+                            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📜</div>
+        <p>暂无规则</p>
+        <a href="/console/rules/new" class="btn btn-primary">创建第一条规则</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
