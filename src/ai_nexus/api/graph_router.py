@@ -136,6 +136,45 @@ async def get_graph_data(
     }
 
 
+@router.get("/api/graph/god-nodes")
+async def get_god_nodes(graph_svc: GraphSvc, limit: int = 10):
+    """Return the highest-degree nodes (connection hubs) in the graph.
+
+    Query params:
+        limit: Maximum number of god nodes to return (default: 10)
+    """
+    results = await graph_svc.get_god_nodes(limit=limit)
+    return {
+        "god_nodes": results,
+        "total": len(results),
+    }
+
+
+@router.get("/api/graph/surprising-connections")
+async def get_surprising_connections(graph_svc: GraphSvc, limit: int = 10):
+    """Return unexpected cross-domain connections sorted by surprise score.
+
+    Query params:
+        limit: Maximum number of surprising connections to return (default: 10)
+    """
+    results = await graph_svc.get_surprising_connections(limit=limit)
+    return {
+        "surprising_connections": results,
+        "total": len(results),
+    }
+
+
+@router.get("/api/graph/communities")
+async def get_communities(graph_svc: GraphSvc, resolution: float = 1.0):
+    """Return graph communities detected using Leiden algorithm.
+
+    Query params:
+        resolution: Resolution parameter (0.1-10.0), higher=more/smaller communities
+    """
+    results = await graph_svc.detect_communities(resolution=resolution)
+    return results
+
+
 @router.get("/static/{file_path:path}")
 async def get_static_file(file_path: str):
     """Serve static files (CSS, JS)."""

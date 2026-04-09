@@ -4,7 +4,22 @@ Provides Pydantic models for structured knowledge extraction results
 from the Claude API, including entities, relations, and rules.
 """
 
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
+
+class SourceType(StrEnum):
+    """Credibility label for extraction source.
+
+    EXTRACTED: Directly extracted from text with high confidence
+    INFERRED: Inferred by AI with moderate confidence
+    AMBIGUOUS: Low confidence, needs human confirmation
+    """
+
+    EXTRACTED = "extracted"
+    INFERRED = "inferred"
+    AMBIGUOUS = "ambiguous"
 
 
 class ExtractedItem(BaseModel):
@@ -16,6 +31,7 @@ class ExtractedItem(BaseModel):
             relation type for relations)
         domain: Business domain this item belongs to
         confidence: AI confidence score (0.0 to 1.0)
+        source_type: Credibility label indicating how the item was derived
         description: Detailed explanation of the item
     """
 
@@ -23,6 +39,7 @@ class ExtractedItem(BaseModel):
     type: str
     domain: str
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    source_type: SourceType = Field(default=SourceType.INFERRED)
     description: str = ""
 
 
@@ -93,6 +110,7 @@ class ExtractedRule(BaseModel):
         severity: Impact level ("error", "warning", "info")
         domain: Business domain this rule applies to
         confidence: AI confidence score (0.0 to 1.0)
+        source_type: Credibility label indicating how the rule was derived
         description: Detailed explanation of the rule
         conditions: Optional JSON structure defining rule logic
     """
@@ -101,6 +119,7 @@ class ExtractedRule(BaseModel):
     severity: str = Field(default="warning", pattern="^(error|warning|info|critical)$")
     domain: str
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    source_type: SourceType = Field(default=SourceType.INFERRED)
     description: str = ""
     conditions: dict | None = None
 

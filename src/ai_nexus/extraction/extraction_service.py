@@ -15,6 +15,7 @@ from ai_nexus.models.extraction import (
     ExtractedRelation,
     ExtractedRule,
     ExtractionResult,
+    SourceType,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,24 @@ class ExtractionService:
             logger.error("Unexpected error during extraction: %s", e)
             return ExtractionResult()
 
+    @staticmethod
+    def _determine_source_type(confidence: float) -> SourceType:
+        """Determine source type based on confidence score.
+
+        Args:
+            confidence: AI confidence score (0.0 to 1.0)
+
+        Returns:
+            EXTRACTED for high confidence (>= 0.75)
+            INFERRED for medium confidence (>= 0.5)
+            AMBIGUOUS for low confidence (< 0.5)
+        """
+        if confidence >= 0.75:
+            return SourceType.EXTRACTED
+        if confidence >= 0.5:
+            return SourceType.INFERRED
+        return SourceType.AMBIGUOUS
+
     def _parse_response(
         self,
         response_text: str,
@@ -191,40 +210,48 @@ class ExtractionService:
             data = json.loads(json_text)
 
             # Validate and build ExtractionResult
-            entities = [
-                ExtractedEntity(
-                    name=e.get("name", ""),
-                    type=e.get("type", "概念"),
-                    domain=e.get("domain", domain_hint or "general"),
-                    confidence=float(e.get("confidence", 0.5)),
-                    description=e.get("description", ""),
+            entities = []
+            for e in data.get("entities", []):
+                conf = float(e.get("confidence", 0.5))
+                entities.append(
+                    ExtractedEntity(
+                        name=e.get("name", ""),
+                        type=e.get("type", "概念"),
+                        domain=e.get("domain", domain_hint or "general"),
+                        confidence=conf,
+                        source_type=self._determine_source_type(conf),
+                        description=e.get("description", ""),
+                    )
                 )
-                for e in data.get("entities", [])
-            ]
 
             relations = []
             for r in data.get("relations", []):
+                conf = float(r.get("confidence", 0.5))
                 # Create ExtractedRelation, parsing name format if present
                 item = ExtractedItem(
                     name=r.get("name", ""),
                     type=r.get("type", r.get("relation_type", "related_to")),
                     domain=r.get("domain", domain_hint or "general"),
-                    confidence=float(r.get("confidence", 0.5)),
+                    confidence=conf,
+                    source_type=self._determine_source_type(conf),
                     description=r.get("description", ""),
                 )
                 relations.append(ExtractedRelation.from_name_format(item.name, item))
 
-            rules = [
-                ExtractedRule(
-                    name=r.get("name", ""),
-                    severity=r.get("severity", "warning"),
-                    domain=r.get("domain", domain_hint or "general"),
-                    confidence=float(r.get("confidence", 0.5)),
-                    description=r.get("description", ""),
-                    conditions=r.get("conditions"),
+            rules = []
+            for r in data.get("rules", []):
+                conf = float(r.get("confidence", 0.5))
+                rules.append(
+                    ExtractedRule(
+                        name=r.get("name", ""),
+                        severity=r.get("severity", "warning"),
+                        domain=r.get("domain", domain_hint or "general"),
+                        confidence=conf,
+                        source_type=self._determine_source_type(conf),
+                        description=r.get("description", ""),
+                        conditions=r.get("conditions"),
+                    )
                 )
-                for r in data.get("rules", [])
-            ]
 
             return ExtractionResult(entities=entities, relations=relations, rules=rules)
 

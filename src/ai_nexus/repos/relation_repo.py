@@ -73,3 +73,8 @@ class RelationRepo:
             "DELETE FROM relations WHERE id = ?", (relation_id,)
         )
         return cursor.rowcount > 0
+
+    async def list(self, limit: int = 100) -> list[Relation]:
+        """列出所有关系，用于控制台管理页面。"""
+        rows = await self._db.fetchall(f"{_SELECT} LIMIT ?", (limit,))
+        return [_row_to_relation(r) for r in rows]

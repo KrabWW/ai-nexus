@@ -21,13 +21,16 @@ def find_project_root() -> Path:
 
 
 def generate_hooks_config(
-    hook_scripts_dir: str, ai_nexus_url: str = "http://localhost:8000"
+    hook_scripts_dir: str,
+    ai_nexus_url: str = "http://localhost:8000",
+    include_git_hooks: bool = False,
 ) -> dict:
     """Generate the hooks configuration for Claude Code settings.json.
 
     Args:
         hook_scripts_dir: Path to the directory containing hook scripts
         ai_nexus_url: URL of the AI Nexus service
+        include_git_hooks: Whether to include post-commit/post-checkout git hooks
 
     Returns:
         Dictionary with hooks configuration
@@ -35,7 +38,7 @@ def generate_hooks_config(
     pre_plan_path = f"python {hook_scripts_dir}/pre_plan.py"
     pre_commit_path = f"python {hook_scripts_dir}/pre_commit.py"
 
-    return {
+    config = {
         "hooks": {
             "PreToolUse": [
                 {
@@ -65,11 +68,40 @@ def generate_hooks_config(
         },
     }
 
+    # Add git hooks if requested
+    if include_git_hooks:
+        post_commit_path = f"python {hook_scripts_dir}/post_commit.py"
+        post_checkout_path = f"python {hook_scripts_dir}/post_checkout.py"
+
+        config["hooks"]["PostCommit"] = [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": post_commit_path,
+                    }
+                ]
+            }
+        ]
+        config["hooks"]["PostCheckout"] = [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": post_checkout_path,
+                    }
+                ]
+            }
+        ]
+
+    return config
+
 
 def install_hooks(
     hook_scripts_dir: str | None = None,
     ai_nexus_url: str = "http://localhost:8000",
     settings_path: str | None = None,
+    include_git_hooks: bool = False,
 ) -> None:
     """Install Claude Code hooks configuration.
 
@@ -77,6 +109,7 @@ def install_hooks(
         hook_scripts_dir: Path to hook scripts (relative to project root)
         ai_nexus_url: URL of the AI Nexus service
         settings_path: Custom path to settings.json (defaults to .claude/settings.json)
+        include_git_hooks: Whether to include post-commit/post-checkout git hooks
     """
     project_root = find_project_root()
     settings_file = (
@@ -97,7 +130,7 @@ def install_hooks(
             existing_settings = json.load(f)
 
     # Generate new hooks configuration
-    new_hooks_config = generate_hooks_config(hook_scripts_dir, ai_nexus_url)
+    new_hooks_config = generate_hooks_config(hook_scripts_dir, ai_nexus_url, include_git_hooks)
 
     # Merge with existing settings, preserving non-hook settings
     merged_settings = {**existing_settings}
@@ -115,6 +148,9 @@ def install_hooks(
     print(f"✓ Claude Code hooks installed to: {settings_file}")
     print(f"  - PreToolUse hook: {hook_scripts_dir}/pre_plan.py")
     print(f"  - PreCommit hook: {hook_scripts_dir}/pre_commit.py")
+    if include_git_hooks:
+        print(f"  - PostCommit hook: {hook_scripts_dir}/post_commit.py")
+        print(f"  - PostCheckout hook: {hook_scripts_dir}/post_checkout.py")
     print(f"  - AI Nexus URL: {ai_nexus_url}")
 
 
@@ -128,6 +164,7 @@ Examples:
   python -m ai_nexus.hooks.install
   python -m ai_nexus.hooks.install --url http://localhost:8000
   python -m ai_nexus.hooks.install --url http://localhost:8000 --hooks-dir src/ai_nexus/hooks
+  python -m ai_nexus.hooks.install --git-hooks
         """,
     )
     parser.add_argument(
@@ -143,6 +180,11 @@ Examples:
         "--settings",
         help="Custom path to Claude Code settings.json",
     )
+    parser.add_argument(
+        "--git-hooks",
+        action="store_true",
+        help="Include git hooks (post-commit, post-checkout)",
+    )
 
     args = parser.parse_args()
 
@@ -150,6 +192,7 @@ Examples:
         hook_scripts_dir=args.hooks_dir,
         ai_nexus_url=args.url,
         settings_path=args.settings,
+        include_git_hooks=args.git_hooks,
     )
 
 
