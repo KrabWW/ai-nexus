@@ -1,11 +1,17 @@
 """AI Nexus FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
+from ai_nexus.api.graph_router import router as graph_router
+from ai_nexus.api.ingest_router import router as ingest_router
+from ai_nexus.api.lint_router import router as lint_router
 from ai_nexus.api.router import router as api_router
+from ai_nexus.api.violations_router import router as violations_router
 from ai_nexus.config import Settings
 from ai_nexus.db.sqlite import Database
 from ai_nexus.mcp.server import init_services, mcp
@@ -14,6 +20,8 @@ from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
+from ai_nexus.repos.violation_repo import ViolationRepo
+from ai_nexus.services.flywheel_service import FlywheelService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
 
@@ -39,10 +47,16 @@ async def db_lifespan(app: FastAPI):
     graph_service = GraphService(entity_repo, relation_repo, rule_repo)
     query_service = QueryService(graph_service, mem0_proxy)
 
+    # 初始化 violation repo 和 flywheel service
+    violation_repo = ViolationRepo(db)
+    flywheel_service = FlywheelService(rule_repo, violation_repo)
+
     # 注入到 app.state 和 MCP server
     app.state.graph_service = graph_service
     app.state.query_service = query_service
     app.state.audit_repo = audit_repo
+    app.state.violation_repo = violation_repo
+    app.state.flywheel_service = flywheel_service
     init_services(graph_service, query_service)
 
     yield
@@ -66,8 +80,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Include REST API router
+    # Include REST API routers
     app.include_router(api_router)
+    app.include_router(lint_router)
+    app.include_router(graph_router)
+    app.include_router(ingest_router)
+    app.include_router(violations_router)
+
+    # Mount static files for graph visualization
+    static_dir = Path(__file__).parent.parent.parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     # Mount MCP separately (outside lifespan for test compatibility)
     mcp_http_app = mcp.streamable_http_app()
