@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-4-20250514"
     llm_max_tokens: int = 4096
 
+    # Refund Configuration (部分退款上限比例)
+    refund_max_ratio: float = 1.0
+
     # Feishu/Lark Integration
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
