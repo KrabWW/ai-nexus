@@ -1,6 +1,6 @@
 # 05-开发流程Hook设计
 
-> 来源：飞书知识库 | 最后编辑：2026-04-06
+> 来源：飞书知识库 | 最后编辑：2026-04-12
 
 ## 核心理念
 
@@ -122,9 +122,50 @@ Claude Code 接到任务
   （可选）post_task 自动抽取新知识
 ```
 
+### Hook 3：post_task — 知识回传 ✅ 已实现
+
+**触发时机**：代码提交后（post-commit hook 自动触发）
+**调用端点**：`POST /api/hooks/post-task`
+
+```
+Git commit 完成
+       │
+       ▼
+post-commit hook 触发
+       │
+       ▼
+调用 POST /api/hooks/post-task
+       │
+       ▼
+LLM 分析 commit message + diff
+       │
+       ▼
+提取 entities + rules + relations
+       │
+       ▼
+提交为 pending 候选
+       │
+       ▼
+人工在 /console/audit 审核
+```
+
+**实现方式**：
+- Git `post-commit` hook 自动调用
+- Claude Code skill 自动调用（`.claude/skills/knowledge-hooks/`）
+- MCP `submit_knowledge_candidate` 工具手动调用
+
+### Git Hooks 安装
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+安装后：
+- `commit-msg`：提交前校验业务规则（不阻塞，仅警告）
+- `post-commit`：提交后自动抽取知识
+
 ## MVP 阶段不做的事
 
 - 不做复杂 AI Supervisor 调度系统
 - 不做跨模块冲突自动检测
 - 不做实时任务进度监控面板
-- 不做 post_task 知识自动更新（Phase 3 再做）

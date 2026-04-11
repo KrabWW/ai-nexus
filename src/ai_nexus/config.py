@@ -40,6 +40,9 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str = ""
+    anthropic_base_url: str = ""
+    llm_model: str = "claude-sonnet-4-20250514"
+    llm_max_tokens: int = 4096
 
     # Feishu/Lark Integration
     feishu_app_id: str = ""

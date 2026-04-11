@@ -1,10 +1,42 @@
 # 04-MCP Server设计（修订版）
 
-> 来源：飞书知识库 | 最后编辑：2026-04-06
+> 来源：飞书知识库 | 最后编辑：2026-04-12
 
 ## 定位
 
 MCP Server 是 AI Nexus 与 AI 编程助手之间的桥梁。只暴露业务图谱相关工具，不做通用检索（由 OpenViking 代理）。
+
+## REST API 端点
+
+除了 MCP 工具外，AI Nexus 还提供以下 REST API：
+
+### 知识抽取
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/cold-start` | POST | 冷启动：根据领域描述生成初始知识框架 |
+| `/api/hooks/post-task` | POST | 任务完成后自动抽取知识 |
+| `/api/hooks/pre-plan` | POST | 获取任务相关业务上下文 |
+| `/api/hooks/pre-commit` | POST | 校验变更是否违反业务规则 |
+
+### 审核工作流
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/audit/candidates` | POST | 提交知识候选 |
+| `/api/audit/pending` | GET | 获取待审核列表 |
+| `/api/audit/{id}/approve` | POST | 批准候选（自动入库） |
+| `/api/audit/{id}/reject` | POST | 拒绝候选 |
+
+### 图谱可视化
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/graph` | GET | D3.js 交互式知识图谱页面 |
+| `/api/graph/data` | GET | 图谱数据（nodes + links） |
+| `/api/graph/god-nodes` | GET | 高连接度节点 |
+| `/api/graph/surprising-connections` | GET | 跨域意外连接 |
+| `/api/graph/communities` | GET | Leiden 社区检测 |
 
 ## MCP 工具定义
 

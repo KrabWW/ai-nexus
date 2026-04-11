@@ -30,16 +30,16 @@ async def test_create_and_list(repo: AuditRepo):
 
 
 async def test_list_pending_candidates(repo: AuditRepo):
-    await repo.create(AuditLogCreate(
+    candidate_a = await repo.create(AuditLogCreate(
         table_name="rules", record_id=10, action="submit_candidate",
     ))
-    await repo.create(AuditLogCreate(
+    candidate_b = await repo.create(AuditLogCreate(
         table_name="rules", record_id=11, action="submit_candidate",
     ))
     await repo.create(AuditLogCreate(
-        table_name="rules", record_id=10, action="approve", reviewer="admin"
+        table_name="rules", record_id=candidate_a.id, action="approve", reviewer="admin"
     ))
-    # record_id=10 has been approved; only record_id=11 is still pending
+    # candidate_a (id=1) has been approved; only candidate_b is still pending
     pending = await repo.list_pending()
     assert len(pending) == 1
-    assert pending[0].record_id == 11
+    assert pending[0].id == candidate_b.id

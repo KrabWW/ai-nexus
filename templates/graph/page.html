@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+
+{% block title %}知识图谱 - AI Nexus{% endblock %}
+
+{% block content %}
+<style>
+/* Override graph.css full-page layout for Console embedding */
+.graph-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    margin: -30px;
+    overflow: hidden;
+}
+.graph-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    flex-shrink: 0;
+}
+.graph-controls-left {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.graph-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.graph-search-box i {
+    position: absolute;
+    left: 10px;
+    color: #999;
+    font-size: 0.8rem;
+}
+.graph-search-box input {
+    padding: 6px 10px 6px 28px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    width: 220px;
+}
+.graph-domain-select {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.graph-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #fff;
+}
+.graph-viewport #graph {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+}
+.graph-viewport #graph:active {
+    cursor: grabbing;
+}
+.graph-legend {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: white;
+    padding: 10px 14px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #555;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+}
+/* D3 node/link styles from graph.css still apply */
+.graph-viewport .node { cursor: pointer; }
+.graph-viewport .node circle { stroke: #fff; stroke-width: 2px; }
+.graph-viewport .node:hover circle { stroke: #666; stroke-width: 3px; }
+.graph-viewport .node text { font-size: 11px; pointer-events: none; text-anchor: middle; }
+.graph-viewport .node.highlighted circle { stroke: #ffd700; stroke-width: 4px; }
+.graph-viewport .node.dimmed { opacity: 0.2; }
+.graph-viewport .link { stroke: #999; stroke-opacity: 0.6; stroke-width: 1.5px; }
+.graph-viewport .link.dimmed { opacity: 0.1; }
+.graph-viewport .entity-node { fill: #4a90e2; }
+.graph-viewport .rule-node.rule-info { fill: #5c9cdb; stroke: #3b82f6 !important; stroke-width: 3px; }
+.graph-viewport .rule-node.rule-warning { fill: #fbbf24; stroke: #f59e0b !important; stroke-width: 3px; }
+.graph-viewport .rule-node.rule-critical { fill: #f87171; stroke: #ef4444 !important; stroke-width: 3px; }
+
+/* Tooltip (from graph.css, scoped) */
+.graph-viewport .tooltip {
+    position: absolute;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+    z-index: 1000;
+}
+.graph-viewport .tooltip.visible { opacity: 1; }
+.graph-viewport .tooltip .tooltip-title { font-weight: 600; margin-bottom: 4px; }
+.graph-viewport .tooltip .tooltip-type { font-size: 0.75rem; opacity: 0.8; margin-bottom: 8px; }
+.graph-viewport .tooltip .tooltip-domain {
+    display: inline-block; padding: 2px 8px; background: rgba(255,255,255,0.2);
+    border-radius: 4px; font-size: 0.7rem;
+}
+
+/* Detail Panel (from graph.css, scoped) */
+.graph-viewport .detail-panel {
+    position: absolute; right: 0; top: 0; width: 400px; height: 100%;
+    background: white; box-shadow: -2px 0 20px rgba(0,0,0,0.1);
+    transform: translateX(100%); transition: transform 0.3s ease;
+    overflow-y: auto; z-index: 100;
+}
+.graph-viewport .detail-panel.visible { transform: translateX(0); }
+.graph-viewport .detail-panel.hidden { transform: translateX(100%); }
+.graph-viewport .close-btn {
+    position: absolute; top: 1rem; right: 1rem; background: none; border: none;
+    font-size: 1.5rem; cursor: pointer; color: #999; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center; border-radius: 50%;
+}
+.graph-viewport .close-btn:hover { background: #f0f0f0; color: #333; }
+#panelContent { padding: 2rem 1.5rem; }
+.panel-header { margin-bottom: 1.5rem; }
+.panel-title { font-size: 1.5rem; font-weight: 600; color: #333; margin-bottom: 0.5rem; }
+.panel-domain {
+    display: inline-block; padding: 4px 12px; background: #e0e7ff;
+    color: #4338ca; border-radius: 20px; font-size: 0.85rem; font-weight: 500;
+}
+.panel-section { margin-bottom: 1.5rem; }
+.panel-section-title {
+    font-size: 0.9rem; font-weight: 600; color: #666;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;
+}
+.panel-description { color: #555; line-height: 1.6; }
+.panel-attributes { display: grid; gap: 0.75rem; }
+.attribute-row {
+    display: flex; justify-content: space-between; padding: 0.5rem;
+    background: #f9fafb; border-radius: 6px;
+}
+.attribute-key { font-weight: 500; color: #666; }
+.attribute-value { color: #333; }
+.panel-list { list-style: none; }
+.panel-list-item {
+    padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px;
+    margin-bottom: 0.5rem;
+}
+.panel-list-item:hover { border-color: #667eea; background: #f9fafb; }
+.panel-list-item-title { font-weight: 500; color: #333; margin-bottom: 0.25rem; }
+.panel-list-item-desc { font-size: 0.85rem; color: #666; }
+.severity-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
+.severity-info { background: #dbeafe; color: #1e40af; }
+.severity-warning { background: #fef3c7; color: #92400e; }
+.severity-error { background: #fee2e2; color: #991b1b; }
+.severity-critical { background: #fecaca; color: #7f1d1d; }
+</style>
+<div class="graph-page">
+    <!-- Controls bar -->
+    <div class="graph-controls">
+        <div class="graph-controls-left">
+            <div class="graph-search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="搜索实体或规则...">
+            </div>
+            <select id="domainFilter" class="graph-domain-select">
+                <option value="">所有域</option>
+            </select>
+            <button id="resetBtn" class="btn btn-secondary btn-sm">
+                重置
+            </button>
+        </div>
+    </div>
+
+    <!-- Graph area -->
+    <div class="graph-viewport">
+        <svg id="graph"></svg>
+        <div id="tooltip" class="tooltip"></div>
+
+        <!-- Detail panel -->
+        <div id="detailPanel" class="detail-panel hidden">
+            <button id="closePanel" class="close-btn">&times;</button>
+            <div id="panelContent"></div>
+        </div>
+
+        <!-- Legend -->
+        <div class="graph-legend">
+            <div class="legend-item">
+                <span class="legend-dot" style="background: #4a90e2;"></span>
+                <span>实体</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background: #5c9cdb; border: 2px solid #3b82f6;"></span>
+                <span>规则 (Info)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background: #fbbf24; border: 2px solid #f59e0b;"></span>
+                <span>规则 (Warning)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot" style="background: #f87171; border: 2px solid #ef4444;"></span>
+                <span>规则 (Critical)</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/graph.js"></script>
+{% endblock %}

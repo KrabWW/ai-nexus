@@ -22,6 +22,7 @@ from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
 from ai_nexus.repos.violation_repo import ViolationRepo
+from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.flywheel_service import FlywheelService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
@@ -52,12 +53,22 @@ async def db_lifespan(app: FastAPI):
     violation_repo = ViolationRepo(db)
     flywheel_service = FlywheelService(rule_repo, violation_repo)
 
+    # 初始化 extraction service
+    extraction_service = ExtractionService(
+        entity_repo, relation_repo, rule_repo,
+        api_key=settings.anthropic_api_key,
+        base_url=settings.anthropic_base_url,
+        model=settings.llm_model,
+        max_tokens=settings.llm_max_tokens,
+    )
+
     # 注入到 app.state 和 MCP server
     app.state.graph_service = graph_service
     app.state.query_service = query_service
     app.state.audit_repo = audit_repo
     app.state.violation_repo = violation_repo
     app.state.flywheel_service = flywheel_service
+    app.state.extraction_service = extraction_service
     init_services(graph_service, query_service, audit_repo)
 
     yield

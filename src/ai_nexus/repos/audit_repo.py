@@ -56,13 +56,17 @@ class AuditRepo:
         )
         return [_row_to_log(r) for r in rows]
 
+    async def get_by_id(self, log_id: int) -> AuditLog | None:
+        row = await self._db.fetchone(f"{_SELECT} WHERE id = ?", (log_id,))
+        return _row_to_log(row) if row else None
+
     async def list_pending(self) -> list[AuditLog]:
         """返回已提交但未审核（无 approve/reject 记录）的候选项最新提交记录。"""
         rows = await self._db.fetchall(
             f"""
             {_SELECT}
             WHERE action = 'submit_candidate'
-              AND record_id NOT IN (
+              AND id NOT IN (
                 SELECT record_id FROM knowledge_audit_log
                 WHERE action IN ('approve', 'reject')
               )

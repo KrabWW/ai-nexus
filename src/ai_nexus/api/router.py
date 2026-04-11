@@ -1,15 +1,22 @@
 """REST API 路由：知识图谱 CRUD + 统一搜索。"""
 
+import hashlib
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from ai_nexus.api.dependencies import get_audit_repo, get_graph_service, get_query_service
+from ai_nexus.api.dependencies import (
+    get_audit_repo,
+    get_extraction_service,
+    get_graph_service,
+    get_query_service,
+)
 from ai_nexus.models.audit import AuditLog, AuditLogCreate
 from ai_nexus.models.entity import Entity, EntityCreate, EntityUpdate
 from ai_nexus.models.rule import Rule, RuleCreate, RuleUpdate
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
 
@@ -18,6 +25,7 @@ router = APIRouter(prefix="/api")
 GraphSvc = Annotated[GraphService, Depends(get_graph_service)]
 QuerySvc = Annotated[QueryService, Depends(get_query_service)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
+ExtractionSvc = Annotated[ExtractionService, Depends(get_extraction_service)]
 
 
 # --- Entities ---
@@ -152,14 +160,20 @@ class ReviewAction(BaseModel):
 
 
 @router.post("/audit/{record_id}/approve")
-async def approve_candidate(record_id: int, action: ReviewAction, repo: AuditRepoInj):
+async def approve_candidate(
+    record_id: int, action: ReviewAction, repo: AuditRepoInj, extraction_svc: ExtractionSvc,
+):
     log = await repo.create(AuditLogCreate(
         table_name="knowledge_audit_log",
         record_id=record_id,
         action="approve",
         reviewer=action.reviewer,
     ))
-    return {"status": "approved", "record_id": record_id, "log_id": log.id}
+    ingested = None
+    original = await repo.get_by_id(record_id)
+    if original and original.action == "submit_candidate" and original.new_value:
+        ingested = await extraction_svc.ingest_candidate(original.new_value)
+    return {"status": "approved", "record_id": record_id, "log_id": log.id, "ingested": ingested}
 
 
 @router.post("/audit/{record_id}/reject")
@@ -218,5 +232,109 @@ async def pre_commit_hook(body: PreCommitRequest, query_svc: QuerySvc):
         "warnings": warnings,
         "infos": infos,
         "passed": len(errors) == 0,
+    }
+
+
+# --- Cold Start ---
+
+class ColdStartRequest(BaseModel):
+    domain: str
+    description: str
+    keywords: list[str] | None = None
+
+
+@router.post("/cold-start")
+async def cold_start(body: ColdStartRequest, extraction_svc: ExtractionSvc, repo: AuditRepoInj):
+    # Get existing entity names in the domain
+    existing_entities: list[str] = []
+    # We use the repo's internal db to query entities directly
+    entity_rows = await repo._db.fetchall(
+        "SELECT name FROM entities WHERE domain = ?",
+        (body.domain,),
+    )
+    if entity_rows:
+        existing_entities = [r[0] for r in entity_rows]
+
+    result = await extraction_svc.cold_start(
+        body.domain,
+        body.description,
+        existing_entities or None,
+    )
+
+    # Submit to audit log if there are candidates
+    audit_id = None
+    candidates = result.model_dump()
+    if result.entities or result.relations or result.rules:
+        log = await repo.create(AuditLogCreate(
+            table_name="extraction",
+            record_id=0,
+            action="submit_candidate",
+            new_value=candidates,
+            reviewer="cold_start",
+        ))
+        audit_id = log.id
+
+    return {
+        "audit_id": audit_id,
+        "candidates": candidates,
+        "message": "候选项已提交，请在审核页面确认" if audit_id else "未提取到有效知识",
+    }
+
+
+# --- Post-Task Hook ---
+
+class PostTaskRequest(BaseModel):
+    task_description: str
+    summary: str | None = None
+    keywords: list[str] | None = None
+    idempotency_key: str | None = None
+
+
+@router.post("/hooks/post-task")
+async def post_task_hook(body: PostTaskRequest, extraction_svc: ExtractionSvc, repo: AuditRepoInj):
+    import json as _json
+
+    task_text = body.summary or body.task_description
+    task_hash = hashlib.md5(task_text.encode()).hexdigest()
+
+    # Idempotency check: look for existing submission with same hash
+    existing = await repo._db.fetchall(
+        "SELECT id, table_name, record_id, action, old_value, new_value, reviewer, created_at "
+        "FROM knowledge_audit_log "
+        "WHERE action = 'submit_candidate' AND reviewer = 'post_task_hook'",
+    )
+    for row in existing:
+        # row: (id, table_name, record_id, action, old_value, new_value, reviewer, created_at)
+        old_val = _json.loads(row[4]) if row[4] else {}
+        if old_val.get("hash") == task_hash:
+            candidates = _json.loads(row[5]) if row[5] else {}
+            return {
+                "submitted": True,
+                "audit_id": row[0],
+                "candidates": candidates,
+                "idempotent": True,
+            }
+
+    result = await extraction_svc.extract(task_text)
+    candidates = result.model_dump()
+
+    has_content = bool(result.entities or result.relations or result.rules)
+    audit_id = None
+
+    if has_content:
+        log = await repo.create(AuditLogCreate(
+            table_name="extraction",
+            record_id=0,
+            action="submit_candidate",
+            old_value={"hash": task_hash},
+            new_value=candidates,
+            reviewer="post_task_hook",
+        ))
+        audit_id = log.id
+
+    return {
+        "submitted": has_content,
+        "audit_id": audit_id,
+        "candidates": candidates if has_content else None,
     }
 

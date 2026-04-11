@@ -3,6 +3,7 @@
 提供基于 Jinja2 模板的 Web 管理界面，用于管理实体、规则、关系等。
 """
 
+from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -12,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from ai_nexus.api.dependencies import (
     get_audit_repo,
     get_entity_repo,
+    get_extraction_service,
     get_graph_service,
     get_relation_repo,
     get_rule_repo,
@@ -23,31 +25,49 @@ from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
+from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 
 router = APIRouter(prefix="/console", tags=["console"])
 templates = Jinja2Templates(directory="templates")
+templates.env.auto_reload = True
+
+# UTC → 本地时间 (CST UTC+8) Jinja2 过滤器
+_CST = timezone(timedelta(hours=8))
+
+def _localtime(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        s = str(value).strip()
+        dt = datetime.fromisoformat(s) if "T" in s else datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_CST).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(value)
+
+templates.env.filters["localtime"] = _localtime
 
 GraphSvc = Annotated[GraphService, Depends(get_graph_service)]
 EntityRepoInj = Annotated[EntityRepo, Depends(get_entity_repo)]
 RuleRepoInj = Annotated[RuleRepo, Depends(get_rule_repo)]
 RelationRepoInj = Annotated[RelationRepo, Depends(get_relation_repo)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
+ExtractionSvcInj = Annotated[ExtractionService, Depends(get_extraction_service)]
 
 
 # --- Base Dashboard ---
 
 @router.get("/")
-async def dashboard(request: Request, graph_svc: GraphSvc):
+async def dashboard(request: Request, graph_svc: GraphSvc, audit_repo: AuditRepoInj):
     """主控制台仪表板，显示系统概览。"""
     entities = await graph_svc._entities.list(limit=10)
     rules = await graph_svc._rules.list(limit=10)
     relations = await graph_svc._relations.list(limit=10)
-    pending_audits = await graph_svc._audit_repo.list_pending()
+    pending_audits = await audit_repo.list_pending()
 
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
+    return templates.TemplateResponse(request, "dashboard.html",{
             "request": request,
             "entities": entities,
             "rules": rules,
@@ -78,9 +98,7 @@ async def list_entities(
     all_entities = await entity_repo.list(limit=1000)
     domains = sorted(set(e.domain for e in all_entities))
 
-    return templates.TemplateResponse(
-        "entities/list.html",
-        {
+    return templates.TemplateResponse(request, "entities/list.html",{
             "request": request,
             "entities": entities,
             "domains": domains,
@@ -94,9 +112,7 @@ async def list_entities(
 @router.get("/entities/new")
 async def new_entity_form(request: Request):
     """新建实体表单页面。"""
-    return templates.TemplateResponse(
-        "entities/form.html",
-        {"request": request, "active_page": "entities", "entity": None},
+    return templates.TemplateResponse(request, "entities/form.html", { "active_page": "entities", "entity": None},
     )
 
 
@@ -134,9 +150,7 @@ async def edit_entity_form(
     entity = await entity_repo.get(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    return templates.TemplateResponse(
-        "entities/form.html",
-        {"request": request, "active_page": "entities", "entity": entity},
+    return templates.TemplateResponse(request, "entities/form.html", { "active_page": "entities", "entity": entity},
     )
 
 
@@ -194,9 +208,7 @@ async def list_rules(
     domains = sorted(set(r.domain for r in all_rules))
     severities = sorted(set(r.severity for r in all_rules))
 
-    return templates.TemplateResponse(
-        "rules/list.html",
-        {
+    return templates.TemplateResponse(request, "rules/list.html",{
             "request": request,
             "rules": rules,
             "domains": domains,
@@ -212,9 +224,7 @@ async def list_rules(
 @router.get("/rules/new")
 async def new_rule_form(request: Request):
     """新建规则表单页面。"""
-    return templates.TemplateResponse(
-        "rules/form.html",
-        {"request": request, "active_page": "rules", "rule": None},
+    return templates.TemplateResponse(request, "rules/form.html", { "active_page": "rules", "rule": None},
     )
 
 
@@ -263,9 +273,7 @@ async def edit_rule_form(
     rule = await rule_repo.get(rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    return templates.TemplateResponse(
-        "rules/form.html",
-        {"request": request, "active_page": "rules", "rule": rule},
+    return templates.TemplateResponse(request, "rules/form.html", { "active_page": "rules", "rule": rule},
     )
 
 
@@ -329,9 +337,7 @@ async def list_relations(
     all_entities = await entity_repo.list(limit=1000)
     entity_map = {e.id: e for e in all_entities}
 
-    return templates.TemplateResponse(
-        "relations/list.html",
-        {
+    return templates.TemplateResponse(request, "relations/list.html",{
             "request": request,
             "relations": relations,
             "entity_map": entity_map,
@@ -347,9 +353,7 @@ async def new_relation_form(
 ):
     """新建关系表单页面。"""
     entities = await entity_repo.list(limit=1000)
-    return templates.TemplateResponse(
-        "relations/form.html",
-        {
+    return templates.TemplateResponse(request, "relations/form.html",{
             "request": request,
             "active_page": "relations",
             "entities": entities,
@@ -425,9 +429,7 @@ async def audit_list(
             }
         )
 
-    return templates.TemplateResponse(
-        "audit/list.html",
-        {
+    return templates.TemplateResponse(request, "audit/list.html",{
             "request": request,
             "pending": pending,
             "audit_history": audit_history,
@@ -440,6 +442,7 @@ async def audit_list(
 async def approve_audit_item(
     record_id: int,
     audit_repo: AuditRepoInj,
+    extraction_svc: ExtractionSvcInj,
 ):
     """批准审核项。"""
     from ai_nexus.models.audit import AuditLogCreate
@@ -452,6 +455,9 @@ async def approve_audit_item(
             reviewer="console",
         )
     )
+    original = await audit_repo.get_by_id(record_id)
+    if original and original.action == "submit_candidate" and original.new_value:
+        await extraction_svc.ingest_candidate(original.new_value)
     return RedirectResponse(url="/console/audit", status_code=303)
 
 
@@ -489,9 +495,7 @@ async def lint_dashboard(
     lint_service = LintService(rule_repo, entity_repo, audit_repo)
     report = await lint_service.generate_report()
 
-    return templates.TemplateResponse(
-        "lint/dashboard.html",
-        {
+    return templates.TemplateResponse(request, "lint/dashboard.html",{
             "request": request,
             "report": report,
             "active_page": "lint",
@@ -504,9 +508,7 @@ async def lint_dashboard(
 @router.get("/imports")
 async def imports_page(request: Request):
     """导入管理页面，显示飞书导入和单文档导入。"""
-    return templates.TemplateResponse(
-        "imports/page.html",
-        {
+    return templates.TemplateResponse(request, "imports/page.html",{
             "request": request,
             "active_page": "imports",
         },
@@ -584,6 +586,14 @@ async def trigger_document_import(
     return RedirectResponse(url="/console/imports", status_code=303)
 
 
+# --- Knowledge Graph Visualization ---
+
+@router.get("/graph")
+async def graph_page(request: Request):
+    """知识图谱 D3.js 可视化页面。"""
+    return templates.TemplateResponse(request, "graph/page.html", {"active_page": "graph"})
+
+
 # --- System Settings ---
 
 @router.get("/settings")
@@ -603,9 +613,7 @@ async def settings_page(
 
     domains = sorted(set(e.domain for e in entities))
 
-    return templates.TemplateResponse(
-        "settings/page.html",
-        {
+    return templates.TemplateResponse(request, "settings/page.html",{
             "request": request,
             "entity_count": entity_count,
             "rule_count": rule_count,

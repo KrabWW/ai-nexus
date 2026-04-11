@@ -6,6 +6,7 @@ from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
+from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
 
@@ -32,3 +33,7 @@ def get_rule_repo(request: Request) -> RuleRepo:
 
 def get_relation_repo(request: Request) -> RelationRepo:
     return request.app.state.graph_service._relations
+
+
+def get_extraction_service(request: Request) -> ExtractionService:
+    return request.app.state.extraction_service

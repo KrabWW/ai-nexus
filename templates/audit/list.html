@@ -8,6 +8,21 @@
     <p>审核待批准的知识条目，查看审核历史</p>
 </div>
 
+<style>
+.severity-critical { background: #fef2f2; border-left: 4px solid #ef4444; color: #991b1b; }
+.severity-warning { background: #fffbeb; border-left: 4px solid #f59e0b; color: #92400e; }
+.severity-info { background: #eff6ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+.severity-default { background: #f8fafc; border-left: 4px solid #94a3b8; color: #475569; }
+.confidence-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
+.confidence-fill { height: 100%; border-radius: 3px; background: #22c55e; transition: width 0.3s; }
+.candidate-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fff; }
+.candidate-section { margin-top: 10px; }
+.candidate-section h4 { margin: 0 0 6px 0; font-size: 0.85em; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+.entity-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #dbeafe; color: #1e40af; font-size: 0.8em; }
+.rule-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; font-size: 0.8em; }
+.relation-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #fef3c7; color: #92400e; font-size: 0.8em; }
+</style>
+
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
     <div class="card">
         <div class="card-header">
@@ -18,13 +33,13 @@
         {% if pending %}
         <div style="display: flex; flex-direction: column; gap: 12px;">
             {% for item in pending %}
-            <div class="audit-pending" style="padding: 12px; border-radius: 4px;">
+            <div class="candidate-card">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
                     <div>
                         <strong>{{ item.table_name }}</strong>
                         <small style="display: block; color: #64748b;">记录 ID: {{ item.record_id }}</small>
                         {% if item.id %}<small style="display: block; color: #64748b;">审核 ID: {{ item.id }}</small>{% endif %}
-                        {% if item.created_at %}<small style="display: block; color: #64748b;">创建时间: {{ item.created_at }}</small>{% endif %}
+                        {% if item.created_at %}<small style="display: block; color: #64748b;">创建时间: {{ item.created_at|localtime }}</small>{% endif %}
                     </div>
                     <div style="display: flex; gap: 6px;">
                         <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;">
@@ -35,6 +50,56 @@
                         </form>
                     </div>
                 </div>
+
+                {% if item.new_value %}
+                {% set nv = item.new_value %}
+
+                {% if nv.entities %}
+                <div class="candidate-section">
+                    <h4>Entities ({{ nv.entities|length }})</h4>
+                    {% for ent in nv.entities %}
+                    <span class="entity-tag" title="{{ ent.description|default('') }}">
+                        {{ ent.name|default(ent.type|default('unknown')) }}
+                        {% if ent.domain %}<small>[{{ ent.domain }}]</small>{% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if nv.rules %}
+                <div class="candidate-section">
+                    <h4>Rules ({{ nv.rules|length }})</h4>
+                    {% for rule in nv.rules %}
+                    {% set sev = rule.severity|default('info') %}
+                    <span class="rule-tag severity-{{ sev }}" title="{{ rule.description|default('') }}">
+                        {{ rule.name|default('unnamed') }}
+                        <small>{{ sev }}</small>
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if nv.relations %}
+                <div class="candidate-section">
+                    <h4>Relations ({{ nv.relations|length }})</h4>
+                    {% for rel in nv.relations %}
+                    <span class="relation-tag">
+                        {{ rel.source|default('?') }} &rarr; {{ rel.relation_type|default('?') }} &rarr; {{ rel.target|default('?') }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if nv.confidence is defined %}
+                <div class="candidate-section">
+                    <h4>Confidence: {{ "%.0f"|format(nv.confidence * 100) }}%</h4>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: {{ nv.confidence * 100 }}%;{% if nv.confidence < 0.5 %}background:#ef4444{% elif nv.confidence < 0.8 %}background:#f59e0b{% endif %}"></div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -61,7 +126,7 @@
                     <small style="color: #64748b;">{{ log.reviewer }}</small>
                 </div>
                 {% if log.created_at %}
-                <small style="color: #64748b;">{{ log.created_at }}</small>
+                <small style="color: #64748b;">{{ log.created_at|localtime }}</small>
                 {% endif %}
             </div>
             {% endfor %}
@@ -78,7 +143,7 @@
     </div>
     <div style="line-height: 1.6;">
         <p><strong>待审核项：</strong>由 AI 提取或导入产生的知识条目，需要人工审核后才能生效。</p>
-        <p><strong>批准：</strong>将条目标记为已批准，使其在知识图谱中生效。</p>
+        <p><strong>批准：</strong>将条目标记为已批准，并自动将候选项中的实体、规则、关系导入知识图谱。</p>
         <p><strong>拒绝：</strong>拒绝条目，不会将其添加到知识图谱。</p>
         <p><strong>审核历史：</strong>记录所有审核操作，便于追溯和审计。</p>
     </div>

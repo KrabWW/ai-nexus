@@ -67,7 +67,7 @@
                     <strong>{{ rule.rule_name }}</strong>
                     <br>
                     <span class="badge badge-info">{{ rule.domain }}</span>
-                    <small style="color: #64748b;">创建于 {{ rule.created_at }}</small>
+                    <small style="color: #64748b;">创建于 {{ rule.created_at|localtime }}</small>
                 </div>
                 <span class="badge badge-warning">{{ rule.days_since_creation }} 天</span>
             </div>
