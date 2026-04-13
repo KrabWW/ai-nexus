@@ -49,8 +49,9 @@ def _get_audit_repo() -> AuditRepo:
 
 @mcp.tool()
 async def search_entities(query: str, domain: str | None = None, limit: int = 10) -> str:
-    """搜索业务实体和关联关系，理解业务结构。
-    优先级：业务规则约束 > 会话历史。结果来自结构化知识图谱。
+    """遇到不熟悉的业务术语、实体名称，或需要理解业务概念之间的关联时，立即调用。
+    在修改涉及业务逻辑的代码之前，先用此工具了解相关实体及其连接关系。
+    数据来自团队审核过的结构化知识图谱，而非未验证的文档。
     """
     svc = _get_graph_service()
     results = await svc.search_entities(query, domain=domain, limit=limit)
@@ -67,7 +68,10 @@ async def search_rules(
     severity: str | None = None,
     limit: int = 10,
 ) -> str:
-    """搜索业务规则和约束。这些规则是硬性约束，不可违反。"""
+    """在实现或修改涉及金融交易、用户数据、订单处理、支付流程、状态变更、数据删除的任何功能之前，必须先调用此工具检查是否有相关约束。
+    这些规则是经过技术负责人审核的硬性约束，不可违反。违反 critical 级规则会导致数据丢失或资金风险。
+    返回结果的 severity: critical=必须遵守, warning=应当遵守, info=参考建议。
+    """
     svc = _get_query_service()
     results = await svc.query_rules(query, domain=domain, limit=limit)
     if severity:
@@ -80,7 +84,10 @@ async def search_rules(
 
 @mcp.tool()
 async def get_business_context(task_description: str, keywords: list[str] | None = None) -> str:
-    """根据任务描述获取完整业务上下文，用于 AI 开发前的知识注入。"""
+    """在开始任何开发任务之前调用（pre-plan 阶段）。
+    传入任务描述，获取相关业务实体、规则及其关联关系作为上下文。
+    这确保实现方案遵守所有已知业务约束。
+    """
     svc = _get_graph_service()
     ctx = await svc.get_business_context(task_description, keywords=keywords)
     return json.dumps(ctx, ensure_ascii=False)
@@ -92,8 +99,11 @@ async def validate_against_rules(
     affected_entities: list[str] | None = None,
     diff_summary: str | None = None,
 ) -> str:
-    """检查代码变更是否违反已知业务规则。
-    返回分级结果：critical（错误）、warning（警告）、info（提示）。
+    """在代码编写完成后、提交之前调用（pre-commit 阶段）。
+    检查变更是否违反已知业务规则。
+    传入变更描述、受影响的实体名称和 diff 摘要。
+    返回 errors（critical 级违规，必须修复）、warnings、infos。
+    如果存在 errors，不要提交代码。
     """
     svc = _get_query_service()
     keywords = affected_entities or [change_description]
@@ -146,11 +156,10 @@ async def submit_knowledge_candidate(
     source: str,
     confidence: float = 0.5,
 ) -> str:
-    """提交新发现的业务知识候选项，等待人工审核。
-    type: entity 或 rule
-    data: 候选项的完整数据（JSON）
-    source: 来源（如 "claude-api-extractor"）
-    confidence: 置信度 0-1
+    """在开发过程中发现新的业务规则、实体或关系时调用。
+    包括从代码注释、文档、PR review、口头指令中发现但尚未录入知识库的知识。
+    候选项进入人工审核工作流，审核通过后自动写入知识图谱。
+    这是知识库持续增长的核心机制。
     """
     try:
         repo = _get_audit_repo()
