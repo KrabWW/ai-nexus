@@ -247,6 +247,11 @@ class PreCommitRequest(BaseModel):
     repo_url: str | None = None
 
 
+class StructuralScanRequest(BaseModel):
+    file_paths: list[str]
+    patterns: list[str] | None = None
+
+
 @router.post("/hooks/pre-plan")
 async def pre_plan_hook(body: PrePlanRequest, graph_svc: GraphSvc):
     ctx = await graph_svc.get_business_context(body.task_description, keywords=body.keywords)
@@ -470,4 +475,44 @@ async def delete_code_reference(ref_id: int, code_ref_repo: CodeRefRepoInj):
     deleted = await code_ref_repo.delete(ref_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Code reference not found")
+
+
+@router.post("/structural-scan")
+async def structural_scan(body: StructuralScanRequest):
+    """Scan files for structural patterns using ast-grep or Python ast fallback."""
+    from ai_nexus.services.structural_scanner import StructuralScanner
+
+    scanner = StructuralScanner()
+    results = await scanner.scan_files(body.file_paths, patterns=body.patterns)
+
+    output = []
+    for r in results:
+        entry: dict[str, Any] = {
+            "file_path": r.file_path,
+            "language": r.language,
+            "symbols": [
+                {
+                    "name": s.name,
+                    "type": s.symbol_type,
+                    "line_start": s.line_start,
+                    "line_end": s.line_end,
+                }
+                for s in r.symbols
+            ],
+        }
+        if r.pattern_matches:
+            entry["pattern_matches"] = [
+                {
+                    "pattern": m.pattern,
+                    "line_start": m.line_start,
+                    "line_end": m.line_end,
+                    "text": m.text[:200],
+                }
+                for m in r.pattern_matches
+            ]
+        if r.error:
+            entry["error"] = r.error
+        output.append(entry)
+
+    return {"results": output, "total": len(output)}
 

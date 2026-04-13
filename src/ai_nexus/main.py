@@ -72,7 +72,7 @@ async def db_lifespan(app: FastAPI):
     app.state.code_reference_repo = code_reference_repo
     app.state.flywheel_service = flywheel_service
     app.state.extraction_service = extraction_service
-    init_services(graph_service, query_service, audit_repo)
+    init_services(graph_service, query_service, audit_repo, code_reference_repo)
 
     yield
 

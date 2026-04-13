@@ -1,14 +1,21 @@
 """AI Nexus MCP Server — 暴露业务图谱工具给 AI 编程助手。"""
 
 import json
+import logging
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from ai_nexus.models.audit import AuditLogCreate
+from ai_nexus.models.code_reference import CodeReferenceCreate
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
+from ai_nexus.services.structural_scanner import StructuralScanner
+
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP("ai-nexus")
 
@@ -16,17 +23,22 @@ mcp = FastMCP("ai-nexus")
 _graph_service: GraphService | None = None
 _query_service: QueryService | None = None
 _audit_repo: AuditRepo | None = None
+_code_ref_repo: CodeReferenceRepo | None = None
+_structural_scanner: StructuralScanner | None = None
 
 
 def init_services(
     graph: GraphService,
     query: QueryService,
     audit_repo: AuditRepo | None = None,
+    code_ref_repo: CodeReferenceRepo | None = None,
 ) -> None:
-    global _graph_service, _query_service, _audit_repo
+    global _graph_service, _query_service, _audit_repo, _code_ref_repo, _structural_scanner
     _graph_service = graph
     _query_service = query
     _audit_repo = audit_repo
+    _code_ref_repo = code_ref_repo
+    _structural_scanner = StructuralScanner()
 
 
 def _get_graph_service() -> GraphService:
@@ -260,6 +272,109 @@ async def detect_communities(resolution: float = 1.0) -> str:
     svc = _get_graph_service()
     result = await svc.detect_communities(resolution=resolution)
     return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
+async def scan_code_patterns(
+    file_paths: list[str],
+    patterns: list[str] | None = None,
+) -> str:
+    """扫描代码文件的结构信息（函数、类定义）和可选的 ast-grep 模式匹配。
+    支持多语言：Python/JS/TS/Go/Rust/Java 等。
+    在完成编码任务后调用，用于识别变更文件中的代码结构，辅助创建精确的代码锚定。
+    patterns 使用 ast-grep 元变量语法：$NAME 匹配单个节点，$$$ARGS 匹配多个节点。
+    """
+    if _structural_scanner is None:
+        return json.dumps({"error": "Structural scanner not initialized"}, ensure_ascii=False)
+
+    existing_files = [fp for fp in file_paths if os.path.isfile(fp)]
+    if not existing_files:
+        return json.dumps(
+            {"results": [], "total": 0, "message": "No valid file paths"},
+            ensure_ascii=False,
+        )
+
+    results = await _structural_scanner.scan_files(existing_files, patterns=patterns)
+    output = []
+    for r in results:
+        entry: dict[str, Any] = {
+            "file_path": r.file_path,
+            "language": r.language,
+            "symbols": [
+                {
+                    "name": s.name,
+                    "type": s.symbol_type,
+                    "line_start": s.line_start,
+                    "line_end": s.line_end,
+                }
+                for s in r.symbols
+            ],
+        }
+        if r.pattern_matches:
+            entry["pattern_matches"] = [
+                {
+                    "pattern": m.pattern,
+                    "line_start": m.line_start,
+                    "line_end": m.line_end,
+                    "text": m.text[:200],
+                    "matched_node": m.matched_node,
+                }
+                for m in r.pattern_matches
+            ]
+        if r.error:
+            entry["error"] = r.error
+        output.append(entry)
+
+    return json.dumps({"results": output, "total": len(output)}, ensure_ascii=False)
+
+
+@mcp.tool()
+async def create_code_reference(
+    rule_id: int,
+    file_path: str,
+    line_start: int | None = None,
+    line_end: int | None = None,
+    snippet: str | None = None,
+    commit_sha: str = "",
+    branch: str = "main",
+    repo_url: str | None = None,
+    reference_type: str = "implementation",
+    source: str = "post_task",
+) -> str:
+    """为业务规则创建代码锚定引用，将规则映射到具体的代码位置。
+    在编码完成后，发现代码与某条业务规则相关时调用。
+    commit_sha 应传入当前的 git commit SHA，确保引用指向不可变的代码版本。
+    reference_type: violation(违规) | risk(风险) | implementation(实现)。
+    """
+    if _code_ref_repo is None:
+        return json.dumps({"error": "Code reference repo not initialized"}, ensure_ascii=False)
+
+    if not commit_sha:
+        return json.dumps({"error": "commit_sha is required"}, ensure_ascii=False)
+
+    try:
+        ref = await _code_ref_repo.create(CodeReferenceCreate(
+            rule_id=rule_id,
+            file_path=file_path,
+            line_start=line_start,
+            line_end=line_end,
+            snippet=snippet,
+            commit_sha=commit_sha,
+            branch=branch,
+            repo_url=repo_url,
+            reference_type=reference_type,
+            source=source,
+        ))
+        return json.dumps({
+            "status": "created",
+            "id": ref.id,
+            "rule_id": ref.rule_id,
+            "file_path": ref.file_path,
+            "line_range": f"L{ref.line_start}-{ref.line_end}" if ref.line_start else None,
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.warning("create_code_reference failed: %s", e)
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 def main() -> None:
