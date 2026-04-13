@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AI Nexus 管理控制台{% endblock %}</title>
     <link rel="stylesheet" href="/static/console.css">
+    <style>
+    .toast { position: fixed; top: 20px; right: 20px; padding: 12px 24px; border-radius: 4px; color: white; z-index: 1000; display: none; }
+    .toast.success { background: #22c55e; }
+    .toast.error { background: #ef4444; }
+    </style>
 </head>
 <body>
     <aside class="sidebar">
@@ -46,6 +51,36 @@
     <main class="main-content">
         {% block content %}{% endblock %}
     </main>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+    function showToast(msg, type) {
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.className = 'toast ' + type; t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 3000);
+    }
+
+    // 拦截表单提交，显示 Toast 反馈
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                const approveBtn = form.querySelector('button[type="submit"]');
+                if (approveBtn) {
+                    const originalText = approveBtn.textContent;
+                    approveBtn.disabled = true;
+                    approveBtn.textContent = '处理中...';
+
+                    // 表单提交后会自动跳转，这里设置一个超时防止按钮永久禁用
+                    setTimeout(() => {
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = originalText;
+                    }, 5000);
+                }
+            });
+        });
+    });
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

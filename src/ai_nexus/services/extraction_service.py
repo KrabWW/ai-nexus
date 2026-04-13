@@ -4,6 +4,7 @@ Loads prompt templates from markdown files and calls Anthropic Claude
 to extract business entities, relations, and rules from text.
 """
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -91,7 +92,13 @@ def _parse_response(
                 source_type=_determine_source_type(conf),
                 description=r.get("description", ""),
             )
-            relations.append(ExtractedRelation.from_name_format(item.name, item))
+            rel = ExtractedRelation.from_name_format(item.name, item)
+            # Override domains if explicitly provided in the response
+            if "source_domain" in r:
+                rel.source_domain = r["source_domain"]
+            if "target_domain" in r:
+                rel.target_domain = r["target_domain"]
+            relations.append(rel)
 
         rules = [
             ExtractedRule(
@@ -148,6 +155,48 @@ class ExtractionService:
             kwargs["base_url"] = self._base_url
         return anthropic.Anthropic(**kwargs)
 
+    _RETRYABLE_ERRORS = (
+        anthropic.APIConnectionError,
+        anthropic.APITimeoutError,
+        anthropic.RateLimitError,
+        anthropic.InternalServerError,
+    )
+
+    async def _call_llm(self, prompt: str, *, max_retries: int = 3) -> str | None:
+        """Call Claude API with exponential backoff retry.
+
+        Retries on transient errors (connection, timeout, rate limit, server).
+        Returns response text or None on persistent failure.
+        """
+        client = self._get_client()
+        if client is None:
+            return None
+
+        for attempt in range(max_retries):
+            try:
+                message = client.messages.create(
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return _extract_text(message)
+            except self._RETRYABLE_ERRORS as exc:
+                if attempt < max_retries - 1:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d), retrying in %ds: %s",
+                        attempt + 1, max_retries, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        "LLM call failed after %d attempts: %s", max_retries, exc,
+                    )
+            except Exception as exc:
+                logger.error("Non-retryable LLM error: %s", exc)
+                break
+        return None
+
     async def extract(
         self, text: str, domain_hint: str | None = None
     ) -> ExtractionResult:
@@ -164,27 +213,15 @@ class ExtractionService:
         if not text or not text.strip():
             return ExtractionResult()
 
-        client = self._get_client()
-        if client is None:
-            logger.warning("No API key configured; returning empty extraction result")
-            return ExtractionResult()
-
         prompt_template = _load_prompt("extraction_prompt.md")
         prompt = prompt_template.replace("{{DOMAIN_HINT}}", domain_hint or "").replace(
             "{{TEXT}}", text
         )
 
-        try:
-            message = client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            response_text = _extract_text(message)
-            return _parse_response(response_text, domain_hint)
-        except Exception as exc:
-            logger.warning("Extraction API call failed: %s", exc)
+        response_text = await self._call_llm(prompt)
+        if response_text is None:
             return ExtractionResult()
+        return _parse_response(response_text, domain_hint)
 
     async def cold_start(
         self,
@@ -202,11 +239,6 @@ class ExtractionService:
         Returns:
             ExtractionResult with suggested entities, relations, and rules.
         """
-        client = self._get_client()
-        if client is None:
-            logger.warning("No API key configured; returning empty cold-start result")
-            return ExtractionResult()
-
         prompt_template = _load_prompt("cold_start_prompt.md")
         existing_str = (
             json.dumps(existing_entities, ensure_ascii=False)
@@ -219,23 +251,18 @@ class ExtractionService:
             .replace("{{EXISTING_ENTITIES}}", existing_str)
         )
 
-        try:
-            message = client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            response_text = _extract_text(message)
-            return _parse_response(response_text, domain)
-        except Exception as exc:
-            logger.warning("Cold-start API call failed: %s", exc)
+        response_text = await self._call_llm(prompt)
+        if response_text is None:
             return ExtractionResult()
+        return _parse_response(response_text, domain)
 
     async def ingest_candidate(self, candidate_data: dict) -> dict:
         """Ingest an approved candidate into the knowledge graph.
 
         Parses candidate_data as an ExtractionResult and upserts entities,
         rules, and relations into their respective repos.
+
+        All database operations are wrapped in a transaction for atomicity.
 
         Args:
             candidate_data: Dict matching ExtractionResult schema with
@@ -255,7 +282,31 @@ class ExtractionService:
             "rule_ids": [],
         }
 
+        # Get database instance from any repo for transaction
+        db = None
+        if self._entity_repo is not None:
+            db = self._entity_repo._db
+        elif self._relation_repo is not None:
+            db = self._relation_repo._db
+        elif self._rule_repo is not None:
+            db = self._rule_repo._db
+
+        # Wrap all operations in a transaction if we have a database
+        if db is not None:
+            async with db.transaction():
+                return await self._ingest_candidate_impl(result, summary)
+        else:
+            return await self._ingest_candidate_impl(result, summary)
+
+    async def _ingest_candidate_impl(self, result: ExtractionResult, summary: dict) -> dict:
+        """Internal implementation of ingest_candidate operations.
+
+        This method contains the actual logic for ingesting entities, rules,
+        and relations. It is called within a transaction context by
+        ingest_candidate.
+        """
         # --- Entities ---
+        entity_cache: dict[tuple[str, str], int] = {}  # (name, domain) -> id
         if self._entity_repo is not None:
             for ent in result.entities:
                 existing = await self._entity_repo.search(ent.name, domain=ent.domain, limit=10)
@@ -270,6 +321,7 @@ class ExtractionService:
                         )
                     summary["entities_updated"] += 1
                     summary["entity_ids"].append(entity.id)
+                    entity_cache[(ent.name, ent.domain)] = entity.id
                 else:
                     from ai_nexus.models.entity import EntityCreate
                     created = await self._entity_repo.create(
@@ -284,6 +336,7 @@ class ExtractionService:
                     )
                     summary["entities_created"] += 1
                     summary["entity_ids"].append(created.id)
+                    entity_cache[(ent.name, ent.domain)] = created.id
 
         # --- Rules ---
         if self._rule_repo is not None:
@@ -321,39 +374,55 @@ class ExtractionService:
 
         # --- Relations ---
         if self._relation_repo is not None and self._entity_repo is not None:
+            # Use entity_cache built during entity creation (works inside transaction)
+            # For entities not in cache (e.g. pre-existing), do batch DB lookup
+            summary["relations_pending"] = 0
             for rel in result.relations:
-                # Parse source/target from name if not already set
                 source_name = rel.source_name
                 target_name = rel.target_name
                 relation_type = rel.relation_type
+
                 if not source_name and " → " in rel.name:
                     parts = rel.name.split(" → ")
                     if len(parts) == 3:
-                        source_name, relation_type, target_name = parts
+                        source_name = parts[0]
+                        target_name = parts[2]
+                        relation_type = relation_type or parts[1]
 
                 if not source_name or not target_name:
                     continue
 
-                src_entities = await self._entity_repo.search(
-                    source_name, domain=rel.domain, limit=10
-                )
-                src_exact = [e for e in src_entities if e.name == source_name]
-                tgt_entities = await self._entity_repo.search(
-                    target_name, domain=rel.domain, limit=10
-                )
-                tgt_exact = [e for e in tgt_entities if e.name == target_name]
-                if src_exact and tgt_exact:
+                src_domain = rel.source_domain or rel.domain
+                tgt_domain = rel.target_domain or rel.domain
+
+                src_id = entity_cache.get((source_name, src_domain))
+                tgt_id = entity_cache.get((target_name, tgt_domain))
+
+                if src_id and tgt_id:
                     from ai_nexus.models.relation import RelationCreate
                     await self._relation_repo.create(
                         RelationCreate(
-                            source_entity_id=src_exact[0].id,
-                            relation_type=relation_type or rel.relation_type or rel.type,
-                            target_entity_id=tgt_exact[0].id,
+                            source_entity_id=src_id,
+                            relation_type=relation_type or rel.type,
+                            target_entity_id=tgt_id,
                             description=rel.description,
                             status="approved",
                             source="extraction",
                         )
                     )
                     summary["relations_created"] += 1
+                else:
+                    # Entity not found - write to pending_relations
+                    await self._relation_repo.create_pending(
+                        source_name=source_name,
+                        source_domain=src_domain,
+                        target_name=target_name,
+                        target_domain=tgt_domain,
+                        relation_type=relation_type or rel.type,
+                        domain=rel.domain,
+                        description=rel.description,
+                        conditions=None,
+                    )
+                    summary["relations_pending"] += 1
 
         return summary

@@ -21,11 +21,11 @@ async def test_schema_version_table_exists(db: Database):
 
 
 async def test_migration_001_applied(db: Database):
-    """migration 001 执行后版本号为 3 (including 002 ingest_tracking, 003 violation_events)."""
+    """migration 001 执行后版本号为 5 (001-003 init + 004 pending_relations + 005 unique_entity_name)."""
     await db.run_migrations()
     row = await db.fetchone("SELECT MAX(version) FROM schema_version")
     assert row is not None
-    assert row[0] == 3
+    assert row[0] == 5
 
 
 async def test_run_migrations_idempotent(db: Database):

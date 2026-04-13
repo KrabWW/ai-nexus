@@ -1,6 +1,8 @@
 """Async SQLite connection management using aiosqlite."""
 
 import re
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,8 @@ class Database:
 
     Manages a single aiosqlite connection with WAL mode and foreign key support.
     """
+
+    _txn: ContextVar["str | None"] = ContextVar("_txn", default=None)
 
     def __init__(self, db_path: str | Path) -> None:
         """Initialize database manager.
@@ -41,6 +45,32 @@ class Database:
         if self._conn:
             await self._conn.close()
             self._conn = None
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Async transaction context manager.
+
+        Begins a transaction, yields control, and commits on success.
+        Rolls back on exception and re-raises it.
+
+        Raises:
+            RuntimeError: If called within an existing transaction (nested).
+        """
+        if self._txn.get() is not None:
+            raise RuntimeError("Nested transactions not supported")
+        token = self._txn.set("active")
+        try:
+            if not self._conn:
+                raise RuntimeError("Database not connected. Call connect() first.")
+            await self._conn.execute("BEGIN")
+            yield
+            await self._conn.commit()
+        except Exception:
+            if self._conn:
+                await self._conn.rollback()
+            raise
+        finally:
+            self._txn.reset(token)
 
     async def run_migrations(self) -> None:
         """执行所有未应用的编号 SQL 迁移文件。
@@ -102,7 +132,9 @@ class Database:
         if not self._conn:
             raise RuntimeError("Database not connected. Call connect() first.")
         cursor = await self._conn.execute(sql, params)
-        await self._conn.commit()
+        # Only auto-commit if not in a transaction
+        if self._txn.get() is None:
+            await self._conn.commit()
         return cursor
 
     async def fetchone(self, sql: str, params: tuple = ()) -> tuple[Any, ...] | None:

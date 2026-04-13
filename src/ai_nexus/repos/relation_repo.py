@@ -78,3 +78,101 @@ class RelationRepo:
         """列出所有关系，用于控制台管理页面。"""
         rows = await self._db.fetchall(f"{_SELECT} LIMIT ?", (limit,))
         return [_row_to_relation(r) for r in rows]
+
+    async def list_all(self, limit: int = 100000) -> list[Relation]:
+        """获取所有关系（用于图谱批量加载）。"""
+        rows = await self._db.fetchall(f"{_SELECT} LIMIT ?", (limit,))
+        return [_row_to_relation(r) for r in rows]
+
+    async def get_all_for_entities(self, entity_ids: list[int]) -> list[Relation]:
+        """批量查询多个实体的所有关系（出边+入边）。"""
+        if not entity_ids:
+            return []
+        placeholders = ",".join("?" * len(entity_ids))
+        rows = await self._db.fetchall(
+            f"{_SELECT} WHERE source_entity_id IN ({placeholders}) "
+            f"OR target_entity_id IN ({placeholders})",
+            tuple(entity_ids) * 2,
+        )
+        return [_row_to_relation(r) for r in rows]
+
+    async def create_pending(
+        self,
+        source_name: str,
+        source_domain: str,
+        target_name: str,
+        target_domain: str,
+        relation_type: str,
+        domain: str,
+        description: str = "",
+        conditions: dict | None = None,
+    ) -> int:
+        """Create a pending relation for entities that don't exist yet.
+
+        Args:
+            source_name: Name of the source entity
+            source_domain: Domain of the source entity
+            target_name: Name of the target entity
+            target_domain: Domain of the target entity
+            relation_type: Type of relationship
+            domain: Business domain for the relation
+            description: Optional description
+            conditions: Optional conditions as JSON
+
+        Returns:
+            ID of the created pending relation
+        """
+        cursor = await self._db.execute(
+            """INSERT INTO pending_relations
+               (source_name, source_domain, target_name, target_domain,
+                relation_type, domain, description, conditions)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                source_name,
+                source_domain,
+                target_name,
+                target_domain,
+                relation_type,
+                domain,
+                description,
+                json.dumps(conditions) if conditions else None,
+            ),
+        )
+        return cursor.lastrowid
+
+    async def list_pending(self, limit: int = 100) -> list[dict]:
+        """List all pending relations.
+
+        Args:
+            limit: Maximum number of records to return
+
+        Returns:
+            List of pending relation dicts
+        """
+        rows = await self._db.fetchall(
+            """SELECT id, source_name, source_domain, target_name, target_domain,
+                      relation_type, domain, description, conditions, status,
+                      retry_count, created_at, updated_at
+               FROM pending_relations
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        return [
+            {
+                "id": r[0],
+                "source_name": r[1],
+                "source_domain": r[2],
+                "target_name": r[3],
+                "target_domain": r[4],
+                "relation_type": r[5],
+                "domain": r[6],
+                "description": r[7],
+                "conditions": json.loads(r[8]) if r[8] else None,
+                "status": r[9],
+                "retry_count": r[10],
+                "created_at": r[11],
+                "updated_at": r[12],
+            }
+            for r in rows
+        ]

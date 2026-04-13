@@ -36,11 +36,10 @@ class GraphService:
 
     async def get_neighbors(self, entity_id: int) -> list[Entity]:
         """返回与 entity_id 直接相连的所有实体（出边 + 入边）。"""
-        out_rels = await self._relations.get_by_source(entity_id)
-        in_rels = await self._relations.get_by_target(entity_id)
+        all_rels = await self._relations.get_all_for_entities([entity_id])
         neighbor_ids = (
-            {r.target_entity_id for r in out_rels}
-            | {r.source_entity_id for r in in_rels}
+            {r.target_entity_id for r in all_rels if r.source_entity_id == entity_id}
+            | {r.source_entity_id for r in all_rels if r.target_entity_id == entity_id}
         )
         neighbor_ids.discard(entity_id)
         if not neighbor_ids:
@@ -152,20 +151,13 @@ class GraphService:
         # Get all entities
         entities = await self._entities.list(limit=10000)
 
-        # Count degrees for each entity
+        # Initialize degree map
         degree_map: dict[int, dict[str, int]] = {}
-
         for entity in entities:
             degree_map[entity.id] = {"in": 0, "out": 0, "total": 0}
 
-        # Count relations
-        all_relations = []
-        for entity in entities:
-            out_rels = await self._relations.get_by_source(entity.id)
-            in_rels = await self._relations.get_by_target(entity.id)
-            all_relations.extend(out_rels)
-            all_relations.extend(in_rels)
-
+        # Load all relations in one query and count degrees in memory
+        all_relations = await self._relations.list_all()
         for rel in all_relations:
             if rel.source_entity_id in degree_map:
                 degree_map[rel.source_entity_id]["out"] += 1
@@ -218,7 +210,9 @@ class GraphService:
         # Get all entities grouped by domain
         entities = await self._entities.list(limit=10000)
         entities_by_domain: dict[str, list[Entity]] = {}
+        entity_map: dict[int, Entity] = {}
         for entity in entities:
+            entity_map[entity.id] = entity
             if entity.domain not in entities_by_domain:
                 entities_by_domain[entity.domain] = []
             entities_by_domain[entity.domain].append(entity)
@@ -227,20 +221,40 @@ class GraphService:
         domains = list(entities_by_domain.keys())
         domain_index = {d: i for i, d in enumerate(domains)}
 
-        # Calculate entity degrees for importance scoring
+        # Load all relations once and build in-memory index
+        all_relations = await self._relations.list_all()
+        relations_by_entity: dict[int, list[dict]] = {}
         degree_map: dict[int, int] = {}
-        for entity in entities:
-            out_rels = await self._relations.get_by_source(entity.id)
-            in_rels = await self._relations.get_by_target(entity.id)
-            degree_map[entity.id] = len(out_rels) + len(in_rels)
+
+        for rel in all_relations:
+            # Build outgoing relations index
+            if rel.source_entity_id not in relations_by_entity:
+                relations_by_entity[rel.source_entity_id] = []
+            relations_by_entity[rel.source_entity_id].append({
+                "rel": rel,
+                "direction": "out"
+            })
+
+            # Build incoming relations index
+            if rel.target_entity_id not in relations_by_entity:
+                relations_by_entity[rel.target_entity_id] = []
+            relations_by_entity[rel.target_entity_id].append({
+                "rel": rel,
+                "direction": "in"
+            })
+
+            # Count degrees
+            degree_map[rel.source_entity_id] = degree_map.get(rel.source_entity_id, 0) + 1
+            degree_map[rel.target_entity_id] = degree_map.get(rel.target_entity_id, 0) + 1
 
         # Find cross-domain connections
         connections: list[dict] = []
         seen_pairs: set[tuple[int, int]] = set()
 
         for entity in entities:
-            out_rels = await self._relations.get_by_source(entity.id)
-            in_rels = await self._relations.get_by_target(entity.id)
+            entity_rels = relations_by_entity.get(entity.id, [])
+            out_rels = [item["rel"] for item in entity_rels if item["direction"] == "out"]
+            in_rels = [item["rel"] for item in entity_rels if item["direction"] == "in"]
 
             # Check outgoing connections
             for rel in out_rels:
@@ -249,7 +263,7 @@ class GraphService:
                     continue
                 seen_pairs.add(pair)
 
-                target_entity = await self._entities.get(rel.target_entity_id)
+                target_entity = entity_map.get(rel.target_entity_id)
                 if target_entity and entity.domain != target_entity.domain:
                     # Calculate domain distance (absolute index difference)
                     domain_dist = abs(
@@ -331,33 +345,23 @@ class GraphService:
         entity_ids = [e.id for e in entities]
         entity_id_to_index = {eid: i for i, eid in enumerate(entity_ids)}
 
-        # Build edges list for igraph
+        # Load all relations once and build edges list in memory
+        all_relations = await self._relations.list_all()
         edges = []
         seen_edges: set[tuple[int, int]] = set()
 
-        for entity in entities:
-            out_rels = await self._relations.get_by_source(entity.id)
-            in_rels = await self._relations.get_by_target(entity.id)
-
-            # Add edges from outgoing relations
-            for rel in out_rels:
-                edge = tuple(sorted((entity.id, rel.target_entity_id)))
-                if edge not in seen_edges and rel.target_entity_id in entity_id_to_index:
-                    seen_edges.add(edge)
-                    edges.append((
-                        entity_id_to_index[edge[0]],
-                        entity_id_to_index[edge[1]],
-                    ))
-
-            # Add edges from incoming relations
-            for rel in in_rels:
-                edge = tuple(sorted((rel.source_entity_id, entity.id)))
-                if edge not in seen_edges and rel.source_entity_id in entity_id_to_index:
-                    seen_edges.add(edge)
-                    edges.append((
-                        entity_id_to_index[edge[0]],
-                        entity_id_to_index[edge[1]],
-                    ))
+        for rel in all_relations:
+            edge = tuple(sorted((rel.source_entity_id, rel.target_entity_id)))
+            if (
+                edge not in seen_edges
+                and edge[0] in entity_id_to_index
+                and edge[1] in entity_id_to_index
+            ):
+                seen_edges.add(edge)
+                edges.append((
+                    entity_id_to_index[edge[0]],
+                    entity_id_to_index[edge[1]],
+                ))
 
         if not edges:
             return {
@@ -376,7 +380,7 @@ class GraphService:
             partition = g.community_leiden(resolution_parameter=resolution)
         except Exception:
             # Fallback to louvain if leiden fails
-            partition = g.community_multilevel()
+            partition = g.community_multilevel(return_covers=False)
 
         # Build community results
         communities: list[dict] = []
@@ -402,5 +406,5 @@ class GraphService:
             "communities": communities,
             "entity_community_map": entity_community_map,
             "total_communities": len(communities),
-            "modularity": round(partition.quality("modularity"), 4),
+            "modularity": round(partition.modularity, 4),
         }

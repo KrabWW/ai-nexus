@@ -3,7 +3,7 @@
 提供基于 Jinja2 模板的 Web 管理界面，用于管理实体、规则、关系等。
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -42,7 +42,7 @@ def _localtime(value: str | None) -> str:
         s = str(value).strip()
         dt = datetime.fromisoformat(s) if "T" in s else datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(_CST).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return str(value)
@@ -112,7 +112,10 @@ async def list_entities(
 @router.get("/entities/new")
 async def new_entity_form(request: Request):
     """新建实体表单页面。"""
-    return templates.TemplateResponse(request, "entities/form.html", { "active_page": "entities", "entity": None},
+    return templates.TemplateResponse(
+        request,
+        "entities/form.html",
+        {"active_page": "entities", "entity": None},
     )
 
 
@@ -150,7 +153,10 @@ async def edit_entity_form(
     entity = await entity_repo.get(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
-    return templates.TemplateResponse(request, "entities/form.html", { "active_page": "entities", "entity": entity},
+    return templates.TemplateResponse(
+        request,
+        "entities/form.html",
+        {"active_page": "entities", "entity": entity},
     )
 
 
@@ -184,6 +190,73 @@ async def delete_entity(
     """删除实体。"""
     await entity_repo.delete(entity_id)
     return RedirectResponse(url="/console/entities", status_code=303)
+
+
+@router.get("/entities/deduplicate")
+async def deduplicate_entities_form(
+    request: Request,
+    entity_repo: EntityRepoInj,
+):
+    """实体去重管理页面，显示重复实体预览。"""
+    duplicates = await entity_repo.find_duplicates()
+
+    # 获取每个重复组的详细信息
+    duplicate_groups = []
+    for dup in duplicates:
+        entities = await entity_repo.get_by_ids(dup["ids"])
+        # 按创建时间排序，最早的在前
+        entities_sorted = sorted(entities, key=lambda e: e.created_at or "")
+        duplicate_groups.append({
+            "name": dup["name"],
+            "domain": dup["domain"],
+            "count": dup["count"],
+            "ids": dup["ids"],
+            "entities": entities_sorted,
+            "keep_id": entities_sorted[0].id,  # 默认保留最早的
+        })
+
+    return templates.TemplateResponse(request, "entities/deduplicate.html",{
+            "request": request,
+            "duplicate_groups": duplicate_groups,
+            "active_page": "entities",
+        },
+    )
+
+
+@router.post("/entities/deduplicate")
+async def deduplicate_entities_execute(
+    request: Request,
+    entity_repo: EntityRepoInj,
+    keep_ids: str = Form(...),
+    remove_ids: str = Form(...),
+):
+    """执行实体去重合并操作。"""
+    import json
+
+    keep_id_list = json.loads(keep_ids)
+    remove_id_list = json.loads(remove_ids)
+
+    # 逐对执行合并
+    merged_count = 0
+    for keep_id, remove_id in zip(keep_id_list, remove_id_list, strict=True):
+        if keep_id and remove_id:
+            try:
+                await entity_repo.merge_entities(keep_id, [remove_id])
+                merged_count += 1
+            except Exception:
+                # 合并失败，记录错误但继续处理其他项
+                pass
+
+    return templates.TemplateResponse(
+        request,
+        "entities/deduplicate.html",
+        {
+            "request": request,
+            "duplicate_groups": [],
+            "active_page": "entities",
+            "success_message": f"成功合并 {merged_count} 个重复实体",
+        },
+    )
 
 
 # --- Rule Management ---
@@ -224,7 +297,10 @@ async def list_rules(
 @router.get("/rules/new")
 async def new_rule_form(request: Request):
     """新建规则表单页面。"""
-    return templates.TemplateResponse(request, "rules/form.html", { "active_page": "rules", "rule": None},
+    return templates.TemplateResponse(
+        request,
+        "rules/form.html",
+        {"active_page": "rules", "rule": None},
     )
 
 
@@ -273,7 +349,10 @@ async def edit_rule_form(
     rule = await rule_repo.get(rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    return templates.TemplateResponse(request, "rules/form.html", { "active_page": "rules", "rule": rule},
+    return templates.TemplateResponse(
+        request,
+        "rules/form.html",
+        {"active_page": "rules", "rule": rule},
     )
 
 
@@ -403,6 +482,7 @@ async def delete_relation(
 async def audit_list(
     request: Request,
     audit_repo: AuditRepoInj,
+    relation_repo: RelationRepoInj,
 ):
     """审核工作流页面，显示待审核候选和审核历史。"""
     pending = await audit_repo.list_pending()
@@ -429,10 +509,15 @@ async def audit_list(
             }
         )
 
+    # 获取待处理关系数量
+    pending_relations = await relation_repo.list_pending(limit=1000)
+    pending_relations_count = len(pending_relations)
+
     return templates.TemplateResponse(request, "audit/list.html",{
             "request": request,
             "pending": pending,
             "audit_history": audit_history,
+            "pending_relations_count": pending_relations_count,
             "active_page": "audit",
         },
     )

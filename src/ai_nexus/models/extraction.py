@@ -57,12 +57,16 @@ class ExtractedRelation(ExtractedItem):
 
     Attributes:
         source_name: Name of the source entity
+        source_domain: Domain of the source entity
         target_name: Name of the target entity
+        target_domain: Domain of the target entity
         relation_type: Type of relationship (e.g., "depends_on", "owns", "related_to")
     """
 
     source_name: str = ""
+    source_domain: str = ""
     target_name: str = ""
+    target_domain: str = ""
     relation_type: str = ""
 
     @classmethod
@@ -82,8 +86,10 @@ class ExtractedRelation(ExtractedItem):
         if len(parts) == 3:
             return cls(
                 source_name=parts[0],
+                source_domain=item.domain,  # Use item's domain as source domain
                 relation_type=parts[1],
                 target_name=parts[2],
+                target_domain=item.domain,  # Use item's domain as target domain
                 name=item.name,
                 type=item.type,
                 domain=item.domain,
@@ -92,8 +98,10 @@ class ExtractedRelation(ExtractedItem):
             )
         return cls(
             source_name="",
+            source_domain=item.domain,
             relation_type=item.type,
             target_name="",
+            target_domain=item.domain,
             name=item.name,
             type=item.type,
             domain=item.domain,

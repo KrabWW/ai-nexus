@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}实体去重 - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🔄 实体去重管理</h1>
+    <p>查找和合并重复的实体（基于名称 + 领域）</p>
+</div>
+
+{% if success_message %}
+<div style="padding: 12px; background: #dcfce7; border: 1px solid #22c55e; border-radius: 4px; margin-bottom: 20px; color: #15803d;">
+    {{ success_message }}
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">重复实体列表</h2>
+        <a href="/console/entities" class="btn btn-secondary">返回实体列表</a>
+    </div>
+
+    {% if duplicate_groups %}
+    <form method="post" id="deduplicateForm">
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            {% for group in duplicate_groups %}
+            <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #fff;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div>
+                        <h3 style="margin: 0;">{{ group.name }} <small style="color: #64748b;">({{ group.domain }})</small></h3>
+                        <small style="color: #ef4444;">发现 {{ group.count }} 个重复</small>
+                    </div>
+                </div>
+
+                <div style="display: grid; gap: 12px; margin-bottom: 12px;">
+                    {% for entity in group.entities %}
+                    <div style="border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; background: {% if loop.index == 1 %}#f0fdf4{% else %}#fef2f2{% endif %};">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                    <strong>ID: {{ entity.id }}</strong>
+                                    <span class="badge badge-info">{{ entity.type }}</span>
+                                    {% if loop.index == 1 %}
+                                    <span class="badge badge-success">推荐保留</span>
+                                    {% else %}
+                                    <span class="badge badge-error">将被删除</span>
+                                    {% endif %}
+                                </div>
+                                {% if entity.description %}
+                                <p style="margin: 4px 0; color: #64748b; font-size: 0.9em;">{{ entity.description }}</p>
+                                {% endif %}
+                                <div style="margin-top: 8px; font-size: 0.85em; color: #64748b;">
+                                    <div>状态: {{ entity.status }} | 来源: {{ entity.source }}</div>
+                                    <div>创建时间: {{ entity.created_at }}</div>
+                                    {% if entity.attributes %}
+                                    <div style="margin-top: 4px;">属性: {{ entity.attributes|length }} 个字段</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em; cursor: pointer;">
+                                    <input type="radio" name="keep_{{ group.name }}_{{ group.domain }}"
+                                           value="{{ entity.id }}"
+                                           {% if loop.index == 1 %}checked{% endif %}
+                                           onchange="updateSelection()">
+                                    保留此实体
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em; cursor: pointer;">
+                                    <input type="checkbox" name="remove_{{ group.name }}_{{ group.domain }}"
+                                           value="{{ entity.id }}"
+                                           {% if loop.index != 1 %}checked{% endif %}
+                                           onchange="updateSelection()">
+                                    删除此实体
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div style="padding: 8px; background: #fef3c7; border-radius: 4px; font-size: 0.85em; color: #92400e;">
+                    ℹ️ 合并后：保留一个实体的所有信息，其他实体的属性将合并到保留的实体中，关系引用将自动更新。
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div style="margin-top: 20px; padding: 16px; background: #fef2f2; border: 1px solid #ef4444; border-radius: 4px;">
+            <strong>⚠️ 警告：此操作不可撤销！</strong>
+            <p style="margin: 8px 0;">合并操作将永久删除选中的重复实体，仅保留每个组中的一个实体。请确认后再执行。</p>
+            <button type="submit" class="btn btn-danger" onclick="return confirm('确认合并所有重复实体？此操作不可撤销！')">
+                执行合并 ({{ duplicate_groups|length }} 组)
+            </button>
+        </div>
+    </form>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">✅</div>
+        <p>未发现重复实体</p>
+        <p style="color: #64748b;">所有实体都是唯一的（基于名称 + 领域）</p>
+        <a href="/console/entities" class="btn btn-primary">返回实体列表</a>
+    </div>
+    {% endif %}
+</div>
+
+{% if duplicate_groups %}
+<script>
+function updateSelection() {
+    // 确保同一组内不能同时选择保留和删除同一个实体
+    const form = document.getElementById('deduplicateForm');
+    const groups = {};
+
+    // 收集所有组
+    form.querySelectorAll('input[type="radio"]').forEach(radio => {
+        const name = radio.name.replace('keep_', '');
+        if (!groups[name]) groups[name] = { keep: null, removes: [] };
+        if (radio.checked) groups[name].keep = radio.value;
+    });
+
+    form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        const name = checkbox.name.replace('remove_', '');
+        if (!groups[name]) groups[name] = { keep: null, removes: [] };
+        if (checkbox.checked) {
+            if (!groups[name].removes.includes(checkbox.value)) {
+                groups[name].removes.push(checkbox.value);
+            }
+        }
+    });
+
+    // 取消保留实体的删除勾选
+    for (const [name, selection] of Object.entries(groups)) {
+        if (selection.keep && selection.removes.includes(selection.keep)) {
+            const checkbox = form.querySelector(`input[type="checkbox"][value="${selection.keep}"]`);
+            if (checkbox) checkbox.checked = false;
+            selection.removes = selection.removes.filter(id => id !== selection.keep);
+        }
+    }
+}
+
+// 页面加载时初始化
+updateSelection();
+</script>
+{% endif %}
+{% endblock %}

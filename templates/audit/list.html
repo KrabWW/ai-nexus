@@ -42,10 +42,10 @@
                         {% if item.created_at %}<small style="display: block; color: #64748b;">创建时间: {{ item.created_at|localtime }}</small>{% endif %}
                     </div>
                     <div style="display: flex; gap: 6px;">
-                        <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;">
+                        <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;" onsubmit="return confirm('确认批准此候选知识？此操作将入库生效。')">
                             <button type="submit" class="btn btn-sm btn-success">✓ 批准</button>
                         </form>
-                        <form method="post" action="/console/audit/{{ item.id }}/reject" style="display: inline;">
+                        <form method="post" action="/console/audit/{{ item.id }}/reject" style="display: inline;" onsubmit="return confirm('确认驳回此候选知识？')">
                             <button type="submit" class="btn btn-sm btn-danger">✗ 拒绝</button>
                         </form>
                     </div>
