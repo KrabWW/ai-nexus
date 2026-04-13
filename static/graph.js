@@ -10,6 +10,7 @@ class KnowledgeGraph {
         this.filteredData = { nodes: [], links: [] };
         this.simulation = null;
         this.currentDomain = "";
+        this.currentType = "";
         this.searchQuery = "";
         this.selectedNode = null;
 
@@ -48,6 +49,9 @@ class KnowledgeGraph {
         // Populate domain filter
         this.populateDomainFilter();
 
+        // Populate type filter
+        this.populateTypeFilter();
+
         // Initial render
         this.render();
     }
@@ -67,7 +71,24 @@ class KnowledgeGraph {
         // Domain filter
         document.getElementById("domainFilter").addEventListener("change", (e) => {
             this.currentDomain = e.target.value;
-            this.filterByDomain();
+            this.applyFilters();
+        });
+
+        // Type filter
+        document.getElementById("typeFilter").addEventListener("change", (e) => {
+            this.currentType = e.target.value;
+            this.applyFilters();
+        });
+
+        // Zoom controls
+        document.getElementById("zoomInBtn").addEventListener("click", () => {
+            this.svg.transition().call(this.zoom.scaleBy, 1.5);
+        });
+        document.getElementById("zoomOutBtn").addEventListener("click", () => {
+            this.svg.transition().call(this.zoom.scaleBy, 0.67);
+        });
+        document.getElementById("zoomFitBtn").addEventListener("click", () => {
+            this.fitToView();
         });
 
         // Search input
@@ -117,18 +138,37 @@ class KnowledgeGraph {
     }
 
     filterByDomain() {
-        if (!this.currentDomain) {
-            this.filteredData = JSON.parse(JSON.stringify(this.data));
-            this.filteredData.nodes.forEach(n => n._crossDomain = false);
-        } else {
-            // Get all nodes in the selected domain
+        this.applyFilters();
+    }
+
+    populateTypeFilter() {
+        const types = new Set();
+        this.data.nodes.forEach(node => {
+            if (node.entity_type) {
+                types.add(node.entity_type);
+            }
+        });
+
+        const select = document.getElementById("typeFilter");
+        select.innerHTML = '<option value="">所有类型</option>';
+
+        Array.from(types).sort().forEach(type => {
+            const option = document.createElement("option");
+            option.value = type;
+            option.textContent = type;
+            select.appendChild(option);
+        });
+    }
+
+    applyFilters() {
+        // Start with domain filter
+        let nodeIds = null;
+        if (this.currentDomain) {
             const domainNodes = new Set(
                 this.data.nodes
                     .filter(n => n.domain === this.currentDomain)
                     .map(n => n.id)
             );
-
-            // Add connected entities from other domains (cross-domain relations)
             const connectedNodes = new Set(domainNodes);
             this.data.links.forEach(link => {
                 if (domainNodes.has(link.source) || domainNodes.has(link.target)) {
@@ -136,18 +176,49 @@ class KnowledgeGraph {
                     connectedNodes.add(link.target);
                 }
             });
-
-            // Filter nodes and links, marking cross-domain nodes
-            this.filteredData.nodes = this.data.nodes.filter(n => {
-                n._crossDomain = connectedNodes.has(n.id) && !domainNodes.has(n.id);
-                return connectedNodes.has(n.id);
-            });
-            this.filteredData.links = this.data.links.filter(l =>
-                connectedNodes.has(l.source) && connectedNodes.has(l.target)
-            );
+            nodeIds = connectedNodes;
         }
 
+        // Apply type filter on top
+        this.filteredData.nodes = this.data.nodes.filter(n => {
+            if (nodeIds && !nodeIds.has(n.id)) return false;
+            if (this.currentType && n.entity_type !== this.currentType) return false;
+            n._crossDomain = nodeIds ? (nodeIds.has(n.id) && !n.domain?.includes(this.currentDomain)) : false;
+            return true;
+        });
+
+        const filteredIds = new Set(this.filteredData.nodes.map(n => n.id));
+        this.filteredData.links = this.data.links.filter(l =>
+            filteredIds.has(l.source) && filteredIds.has(l.target)
+        );
+
         this.render();
+    }
+
+    fitToView() {
+        if (this.filteredData.nodes.length === 0) return;
+        const nodes = this.filteredData.nodes;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        nodes.forEach(n => {
+            if (n.x !== undefined) {
+                minX = Math.min(minX, n.x);
+                maxX = Math.max(maxX, n.x);
+                minY = Math.min(minY, n.y);
+                maxY = Math.max(maxY, n.y);
+            }
+        });
+        if (minX === Infinity) return;
+        const padding = 80;
+        const dx = maxX - minX + padding * 2;
+        const dy = maxY - minY + padding * 2;
+        const scale = Math.min(this.width / dx, this.height / dy, 2);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const transform = d3.zoomIdentity
+            .translate(this.width / 2, this.height / 2)
+            .scale(scale)
+            .translate(-cx, -cy);
+        this.svg.transition().duration(500).call(this.zoom.transform, transform);
     }
 
     highlightSearchResults() {
@@ -168,8 +239,10 @@ class KnowledgeGraph {
 
     reset() {
         this.currentDomain = "";
+        this.currentType = "";
         this.searchQuery = "";
         document.getElementById("domainFilter").value = "";
+        document.getElementById("typeFilter").value = "";
         document.getElementById("searchInput").value = "";
         this.filteredData = JSON.parse(JSON.stringify(this.data));
         this.hideDetailPanel();
@@ -223,6 +296,10 @@ class KnowledgeGraph {
                     return `rule-node rule-${d.severity || "info"}`;
                 }
                 return "entity-node";
+            })
+            .style("fill", d => {
+                if (d.type === "rule") return null; // use CSS class colors
+                return this.domainColors(d.domain || "");
             });
 
         // Node labels

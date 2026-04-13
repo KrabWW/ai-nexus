@@ -1,9 +1,9 @@
 """REST API 路由：知识图谱 CRUD + 统一搜索。"""
 
 import hashlib
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from ai_nexus.api.dependencies import (
@@ -26,6 +26,13 @@ GraphSvc = Annotated[GraphService, Depends(get_graph_service)]
 QuerySvc = Annotated[QueryService, Depends(get_query_service)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
 ExtractionSvc = Annotated[ExtractionService, Depends(get_extraction_service)]
+
+
+class PaginatedResponse(BaseModel):
+    items: list[Any]
+    total: int
+    limit: int
+    offset: int
 
 
 # --- Entities ---
@@ -58,9 +65,27 @@ async def delete_entity(entity_id: int, svc: GraphSvc):
         raise HTTPException(status_code=404, detail="Entity not found")
 
 
-@router.get("/entities", response_model=list[Entity])
-async def list_entities(svc: GraphSvc, domain: str | None = None, limit: int = 100):
-    return await svc._entities.list(domain=domain, limit=limit)
+@router.get("/entities", response_model=PaginatedResponse)
+async def list_entities(
+    svc: GraphSvc,
+    domain: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    items = await svc._entities.list(domain=domain, limit=limit, offset=offset)
+    total = await svc._entities.count(domain=domain)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post("/entities/batch", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def batch_create_entities(items: list[EntityCreate], svc: GraphSvc):
+    db = svc._entities._db
+    created = []
+    async with db.transaction():
+        for item in items:
+            entity = await svc._entities.create(item)
+            created.append(entity.id)
+    return {"created": len(created), "ids": created}
 
 
 # --- Rules ---
@@ -93,20 +118,31 @@ async def delete_rule(rule_id: int, svc: GraphSvc):
         raise HTTPException(status_code=404, detail="Rule not found")
 
 
-@router.get("/rules", response_model=list[Rule])
+@router.get("/rules", response_model=PaginatedResponse)
 async def list_rules(
     svc: GraphSvc,
     domain: str | None = None,
     severity: str | None = None,
     status_filter: str | None = None,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
-    return await svc._rules.list(
-        domain=domain, severity=severity, status=status_filter, limit=limit
+    items = await svc._rules.list(
+        domain=domain, severity=severity, status=status_filter, limit=limit, offset=offset
     )
+    total = await svc._rules.count(domain=domain, severity=severity, status=status_filter)
+    return PaginatedResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-# --- Unified Search ---
+@router.post("/rules/batch", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def batch_create_rules(items: list[RuleCreate], svc: GraphSvc):
+    db = svc._rules._db
+    created = []
+    async with db.transaction():
+        for item in items:
+            rule = await svc._rules.create(item)
+            created.append(rule.id)
+    return {"created": len(created), "ids": created}
 
 class SearchBody(BaseModel):
     query: str

@@ -89,21 +89,30 @@ class EntityRepo:
         return cursor.rowcount > 0
 
     async def list(
-        self, domain: str | None = None, limit: int = 100
+        self, domain: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[Entity]:
         if domain:
             rows = await self._db.fetchall(
                 "SELECT id, name, type, description, attributes, domain, status, source, "
-                "created_at, updated_at FROM entities WHERE domain = ? LIMIT ?",
-                (domain, limit),
+                "created_at, updated_at FROM entities WHERE domain = ? LIMIT ? OFFSET ?",
+                (domain, limit, offset),
             )
         else:
             rows = await self._db.fetchall(
                 "SELECT id, name, type, description, attributes, domain, status, source, "
-                "created_at, updated_at FROM entities LIMIT ?",
-                (limit,),
+                "created_at, updated_at FROM entities LIMIT ? OFFSET ?",
+                (limit, offset),
             )
         return [_row_to_entity(r) for r in rows]
+
+    async def count(self, domain: str | None = None) -> int:
+        if domain:
+            row = await self._db.fetchone(
+                "SELECT COUNT(*) FROM entities WHERE domain = ?", (domain,)
+            )
+        else:
+            row = await self._db.fetchone("SELECT COUNT(*) FROM entities")
+        return row[0] if row else 0
 
     async def search(
         self, keyword: str, domain: str | None = None, limit: int = 10

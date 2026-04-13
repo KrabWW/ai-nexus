@@ -8,6 +8,26 @@
     <p>从飞书知识空间或单文档导入业务知识</p>
 </div>
 
+{% if import_result.processed or import_result.failed %}
+<div class="card" style="margin-bottom: 20px; border-left: 4px solid {% if import_result.failed %}#ef4444{% else %}#22c55e{% endif %};">
+    <div style="padding: 12px;">
+        {% if import_result.failed %}
+            <strong style="color: #ef4444;">导入失败</strong>
+            <p style="margin: 4px 0 0; color: #64748b;">错误：{{ import_result.error or "未知错误" }}</p>
+        {% else %}
+            <strong style="color: #22c55e;">导入成功</strong>
+            <p style="margin: 4px 0 0; color: #64748b;">
+                处理 {{ import_result.processed }} 个文档，
+                提取 {{ import_result.entities or 0 }} 个实体，
+                {{ import_result.relations or 0 }} 个关系，
+                {{ import_result.rules or 0 }} 条规则。
+                <a href="/console/audit" style="color: var(--primary-color);">前往审核 →</a>
+            </p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
     <!-- 飞书导入 -->
     <div class="card">

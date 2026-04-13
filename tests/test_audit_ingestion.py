@@ -62,7 +62,7 @@ class TestApproveIngestion:
         assert body["ingested"]["entities_created"] == 1
 
         # Verify entity exists
-        entities = client.get("/api/entities", params={"domain": domain}).json()
+        entities = client.get("/api/entities", params={"domain": domain}).json()["items"]
         names = [e["name"] for e in entities]
         assert entity_name in names
 
@@ -91,7 +91,7 @@ class TestApproveIngestion:
         assert resp.status_code == 200
         assert resp.json()["ingested"]["rules_created"] == 1
 
-        rules = client.get("/api/rules", params={"domain": domain}).json()
+        rules = client.get("/api/rules", params={"domain": domain}).json()["items"]
         names = [r["name"] for r in rules]
         assert rule_name in names
 
@@ -218,6 +218,6 @@ class TestApproveIngestion:
         assert "ingested" not in body
 
         # Entity should NOT exist
-        entities = client.get("/api/entities", params={"domain": domain}).json()
+        entities = client.get("/api/entities", params={"domain": domain}).json()["items"]
         names = [e["name"] for e in entities]
         assert entity_name not in names

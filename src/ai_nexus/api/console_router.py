@@ -5,6 +5,7 @@
 
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -593,9 +594,17 @@ async def lint_dashboard(
 @router.get("/imports")
 async def imports_page(request: Request):
     """导入管理页面，显示飞书导入和单文档导入。"""
-    return templates.TemplateResponse(request, "imports/page.html",{
+    return templates.TemplateResponse(request, "imports/page.html", {
             "request": request,
             "active_page": "imports",
+            "import_result": {
+                "processed": request.query_params.get("processed"),
+                "entities": request.query_params.get("entities"),
+                "relations": request.query_params.get("relations"),
+                "rules": request.query_params.get("rules"),
+                "failed": request.query_params.get("failed"),
+                "error": request.query_params.get("error"),
+            },
         },
     )
 
@@ -606,32 +615,37 @@ async def trigger_feishu_import(
     space_id: str = Form(...),
     domain_hint: str = Form(default=""),
 ):
-    """触发飞书知识空间导入。
-
-    通过内部 HTTP 调用 ingest API 执行导入。
-    """
+    """触发飞书知识空间导入。"""
     import httpx
 
-    # 构建请求体
     payload = {
         "space_id": space_id,
         "domain_hint": domain_hint if domain_hint else None,
         "dry_run": False,
     }
 
-    # 获取基础 URL
     base_url = f"{request.url.scheme}://{request.url.netloc}"
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{base_url}/api/ingest/feishu",
-            json=payload,
-            timeout=300.0,  # 5分钟超时，因为导入可能需要较长时间
-        )
-        if response.status_code != 200:
-            # 导入失败，可以在这里记录日志
-            pass
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{base_url}/api/ingest/feishu",
+                json=payload,
+                timeout=300.0,
+            )
+        if response.status_code == 200:
+            data = response.json()
+            params = urlencode({
+                "processed": data.get("processed", 0),
+                "entities": data.get("entities", 0),
+                "relations": data.get("relations", 0),
+                "rules": data.get("rules", 0),
+            })
+        else:
+            params = urlencode({"failed": 1, "error": response.status_code})
+    except Exception as exc:
+        params = urlencode({"failed": 1, "error": str(exc)[:100]})
 
-    return RedirectResponse(url="/console/imports", status_code=303)
+    return RedirectResponse(url=f"/console/imports?{params}", status_code=303)
 
 
 @router.post("/imports/document")
@@ -641,13 +655,9 @@ async def trigger_document_import(
     content: str = Form(...),
     domain_hint: str = Form(default=""),
 ):
-    """触发单文档导入。
-
-    通过内部 HTTP 调用 ingest API 执行导入。
-    """
+    """触发单文档导入。"""
     import httpx
 
-    # 构建请求体
     payload = {
         "title": title,
         "content": content,
@@ -656,19 +666,28 @@ async def trigger_document_import(
         "dry_run": False,
     }
 
-    # 获取基础 URL
     base_url = f"{request.url.scheme}://{request.url.netloc}"
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{base_url}/api/ingest/document",
-            json=payload,
-            timeout=60.0,
-        )
-        if response.status_code != 200:
-            # 导入失败，可以在这里记录日志
-            pass
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{base_url}/api/ingest/document",
+                json=payload,
+                timeout=60.0,
+            )
+        if response.status_code == 200:
+            data = response.json()
+            params = urlencode({
+                "processed": data.get("processed", 0),
+                "entities": data.get("entities", 0),
+                "relations": data.get("relations", 0),
+                "rules": data.get("rules", 0),
+            })
+        else:
+            params = urlencode({"failed": 1, "error": response.status_code})
+    except Exception as exc:
+        params = urlencode({"failed": 1, "error": str(exc)[:100]})
 
-    return RedirectResponse(url="/console/imports", status_code=303)
+    return RedirectResponse(url=f"/console/imports?{params}", status_code=303)
 
 
 # --- Knowledge Graph Visualization ---
