@@ -20,6 +20,8 @@ from ai_nexus.api.dependencies import (
     get_relation_repo,
     get_rule_repo,
 )
+import json as _json
+
 from ai_nexus.models.entity import EntityCreate, EntityUpdate
 from ai_nexus.models.relation import RelationCreate
 from ai_nexus.models.rule import RuleCreate, RuleUpdate
@@ -51,6 +53,7 @@ def _localtime(value: str | None) -> str:
         return str(value)
 
 templates.env.filters["localtime"] = _localtime
+templates.env.filters["tojson_cn"] = lambda v: _json.dumps(v, indent=2, ensure_ascii=False)
 
 GraphSvc = Annotated[GraphService, Depends(get_graph_service)]
 EntityRepoInj = Annotated[EntityRepo, Depends(get_entity_repo)]
