@@ -80,29 +80,31 @@
         </div>
 
         {% if ref.snippet %}
-        <div class="diff-view" style="background: #0d1117; border-radius: 6px; overflow: hidden; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6;">
+        <div style="background: #1e293b; border-radius: 6px; overflow: hidden; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 13px; line-height: 1.6;">
             {% set lines = ref.snippet.split('\n') %}
             {% set line_num = ref.line_start if ref.line_start else 1 %}
+            {% set ctx_line_num = [] %}
+            {% for line in lines %}
+            {% if not line.startswith('-') %}
+            {% if ctx_line_num.append(line_num + loop.index0) %}{% endif %}
+            {% endif %}
+            {% endfor %}
             {% for line in lines %}
             {% if line.startswith('+') %}
-            <div class="diff-line diff-add" style="display: flex; background: rgba(46, 160, 67, 0.15); border-left: 3px solid #2ea043;">
-                <span class="diff-gutter" style="min-width: 50px; padding: 0 12px; text-align: right; color: #3fb950; user-select: none; opacity: 0.7;">+</span>
-                <pre style="margin: 0; padding: 0; color: #aff5b4; white-space: pre; flex: 1;">{{ line[1:] }}</pre>
+            {# Key line — highlighted #}
+            <div style="display: flex; background: rgba(251, 191, 36, 0.12); border-left: 3px solid #f59e0b;">
+                <span style="min-width: 48px; padding: 0 10px; text-align: right; color: #64748b; user-select: none; font-size: 12px;">{{ line_num + loop.index0 }}</span>
+                <pre style="margin: 0; padding: 0; color: #fbbf24; white-space: pre; flex: 1;">{{ line[1:] }}</pre>
             </div>
             {% elif line.startswith('-') %}
-            <div class="diff-line diff-del" style="display: flex; background: rgba(248, 81, 73, 0.15); border-left: 3px solid #f85149;">
-                <span class="diff-gutter" style="min-width: 50px; padding: 0 12px; text-align: right; color: #f85149; user-select: none; opacity: 0.7;">-</span>
-                <pre style="margin: 0; padding: 0; color: #ffdcd7; white-space: pre; flex: 1;">{{ line[1:] }}</pre>
-            </div>
+            {# Skip deleted lines #}
             {% elif line.startswith('@@') %}
-            <div class="diff-line diff-hunk" style="display: flex; background: rgba(56, 139, 253, 0.1); border-left: 3px solid #388bfd;">
-                <span class="diff-gutter" style="min-width: 50px; padding: 0 12px; text-align: right; color: #64748b; user-select: none;"></span>
-                <pre style="margin: 0; padding: 0; color: #79c0ff; white-space: pre; flex: 1;">{{ line }}</pre>
-            </div>
+            {# Skip hunk headers #}
             {% else %}
-            <div class="diff-line diff-ctx" style="display: flex; border-left: 3px solid transparent;">
-                <span class="diff-gutter" style="min-width: 50px; padding: 0 12px; text-align: right; color: #484f58; user-select: none;">{{ line_num + loop.index0 }}</span>
-                <pre style="margin: 0; padding: 0; color: #c9d1d9; white-space: pre; flex: 1;">{{ line }}</pre>
+            {# Context line #}
+            <div style="display: flex; border-left: 3px solid transparent;">
+                <span style="min-width: 48px; padding: 0 10px; text-align: right; color: #475569; user-select: none; font-size: 12px;">{{ line_num + loop.index0 }}</span>
+                <pre style="margin: 0; padding: 0; color: #94a3b8; white-space: pre; flex: 1;">{{ line }}</pre>
             </div>
             {% endif %}
             {% endfor %}
