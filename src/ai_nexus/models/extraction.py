@@ -41,6 +41,7 @@ class ExtractedItem(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=0.5)
     source_type: SourceType = Field(default=SourceType.INFERRED)
     description: str = ""
+    temp_id: str | None = None
 
 
 class ExtractedEntity(ExtractedItem):
@@ -130,6 +131,21 @@ class ExtractedRule(BaseModel):
     source_type: SourceType = Field(default=SourceType.INFERRED)
     description: str = ""
     conditions: dict | None = None
+    temp_id: str | None = None
+
+
+class SourceMetadata(BaseModel):
+    """Metadata about the source of an extraction.
+
+    Tracks where extracted knowledge came from for audit and review.
+    """
+
+    source_type: str  # "post_task" | "cold_start" | "feishu" | "manual"
+    original_text: str | None = None
+    task_description: str | None = None
+    commit_sha: str | None = None
+    document_title: str | None = None
+    space_id: str | None = None
 
 
 class ExtractionResult(BaseModel):
@@ -147,6 +163,7 @@ class ExtractionResult(BaseModel):
     entities: list[ExtractedEntity] = Field(default_factory=list)
     relations: list[ExtractedRelation] = Field(default_factory=list)
     rules: list[ExtractedRule] = Field(default_factory=list)
+    source_metadata: SourceMetadata | None = None
 
     def is_empty(self) -> bool:
         """Check if the extraction result contains any knowledge."""

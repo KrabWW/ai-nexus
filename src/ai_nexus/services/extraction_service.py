@@ -256,7 +256,9 @@ class ExtractionService:
             return ExtractionResult()
         return _parse_response(response_text, domain)
 
-    async def ingest_candidate(self, candidate_data: dict) -> dict:
+    async def ingest_candidate(
+        self, candidate_data: dict, approved_temp_ids: set[str] | None = None,
+    ) -> dict:
         """Ingest an approved candidate into the knowledge graph.
 
         Parses candidate_data as an ExtractionResult and upserts entities,
@@ -267,6 +269,8 @@ class ExtractionService:
         Args:
             candidate_data: Dict matching ExtractionResult schema with
                 entities, relations, and rules lists.
+            approved_temp_ids: Set of temp_id strings to approve.
+                None means approve all (backward compat).
 
         Returns:
             Summary dict with counts of created/updated items and their IDs.
@@ -281,6 +285,21 @@ class ExtractionService:
             "entity_ids": [],
             "rule_ids": [],
         }
+
+        # Filter items by approved_temp_ids when per-item approval is used
+        if approved_temp_ids is not None:
+            result.entities = [
+                e for e in result.entities
+                if not e.temp_id or e.temp_id in approved_temp_ids
+            ]
+            result.rules = [
+                r for r in result.rules
+                if not r.temp_id or r.temp_id in approved_temp_ids
+            ]
+            result.relations = [
+                r for r in result.relations
+                if not r.temp_id or r.temp_id in approved_temp_ids
+            ]
 
         # Get database instance from any repo for transaction
         db = None
@@ -426,3 +445,46 @@ class ExtractionService:
                     summary["relations_pending"] += 1
 
         return summary
+
+    async def detect_conflicts(self, candidate_data: dict) -> dict[str, list[dict]]:
+        """Check candidate items against existing knowledge for duplicates.
+
+        Args:
+            candidate_data: Dict with "entities" and "rules" lists.
+
+        Returns:
+            Dict with "duplicates" list containing matching existing items.
+        """
+        conflicts: dict[str, list[dict]] = {"duplicates": []}
+        entities = candidate_data.get("entities", [])
+        rules = candidate_data.get("rules", [])
+
+        for ent in entities:
+            if self._entity_repo is None:
+                break
+            existing = await self._entity_repo.search(
+                ent.get("name", ""), domain=ent.get("domain"), limit=1,
+            )
+            if existing:
+                conflicts["duplicates"].append({
+                    "temp_id": ent.get("temp_id", ""),
+                    "existing_name": existing[0].name,
+                    "existing_id": existing[0].id,
+                    "type": "entity",
+                })
+
+        for rule in rules:
+            if self._rule_repo is None:
+                break
+            existing = await self._rule_repo.search(
+                rule.get("name", ""), domain=rule.get("domain"), limit=1,
+            )
+            if existing:
+                conflicts["duplicates"].append({
+                    "temp_id": rule.get("temp_id", ""),
+                    "existing_name": existing[0].name,
+                    "existing_id": existing[0].id,
+                    "type": "rule",
+                })
+
+        return conflicts

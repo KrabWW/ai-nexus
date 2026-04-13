@@ -15,16 +15,99 @@
 .severity-default { background: #f8fafc; border-left: 4px solid #94a3b8; color: #475569; }
 .confidence-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; }
 .confidence-fill { height: 100%; border-radius: 3px; background: #22c55e; transition: width 0.3s; }
-.candidate-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 12px; background: #fff; }
+.candidate-card {
+    border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;
+    margin-bottom: 16px; background: #fff;
+}
 .candidate-section { margin-top: 10px; }
 .candidate-section h4 { margin: 0 0 6px 0; font-size: 0.85em; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
 .entity-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #dbeafe; color: #1e40af; font-size: 0.8em; }
 .rule-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; font-size: 0.8em; }
 .relation-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #fef3c7; color: #92400e; font-size: 0.8em; }
-.detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; margin: 4px 0; }
+.detail-card {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 10px 12px; margin: 4px 0; transition: border-color 0.2s;
+}
 .detail-card code { background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 0.85em; }
 .source-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; background: #f1f5f9; color: #475569; }
+.conflict-card { border-color: #fca5a5; background: #fef2f2; }
+.conflict-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    background: #fef2f2; color: #991b1b; font-size: 0.75em;
+    border: 1px solid #fca5a5;
+}
+.item-actions { display: flex; gap: 4px; align-items: center; margin-top: 6px; }
+.item-actions button { font-size: 0.8em; padding: 3px 10px; cursor: pointer; border-radius: 4px; border: none; }
+.btn-approve-item { background: #dcfce7; color: #166534; }
+.btn-approve-item.selected { background: #22c55e; color: #fff; }
+.btn-reject-item { background: #fee2e2; color: #991b1b; }
+.btn-reject-item.selected { background: #ef4444; color: #fff; }
+.bulk-actions {
+    display: flex; gap: 8px; margin-top: 16px; padding: 12px;
+    background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;
+}
+.source-header {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; margin-bottom: 10px;
+}
+.source-type-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 500;
+}
+.source-type-post_task { background: #dbeafe; color: #1e40af; }
+.source-type-cold_start { background: #dcfce7; color: #166534; }
+.source-type-feishu { background: #fef3c7; color: #92400e; }
+.source-type-manual { background: #f1f5f9; color: #475569; }
+.original-text {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;
+    padding: 8px; margin: 6px 0; font-size: 0.85em; color: #475569;
+    max-height: 60px; overflow: hidden; position: relative;
+}
+.original-text.expanded { max-height: none; }
+.original-text-toggle { color: #3b82f6; cursor: pointer; font-size: 0.8em; }
 </style>
+
+<script>
+function collectAndSubmit(recordId, action) {
+    var form = document.getElementById('form-' + recordId);
+    if (!form) return;
+
+    // Collect per-item decisions
+    var items = [];
+    var cards = form.querySelectorAll('[data-temp-id]');
+    for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var tid = card.getAttribute('data-temp-id');
+        var itemAction = card.getAttribute('data-action') || action;
+        items.push({temp_id: tid, action: itemAction});
+    }
+
+    var itemsInput = form.querySelector('input[name="items_json"]');
+    itemsInput.value = items.length > 0 ? JSON.stringify(items) : '';
+    form.submit();
+}
+
+function setItemAction(recordId, tempId, action, btn) {
+    var card = document.querySelector('[data-record="' + recordId + '"] [data-temp-id="' + tempId + '"]');
+    if (!card) return;
+    card.setAttribute('data-action', action);
+
+    // Update button styles
+    var btns = card.parentElement.querySelectorAll('.item-actions button');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.remove('selected');
+    }
+    btn.classList.add('selected');
+}
+
+function toggleText(el) {
+    el.classList.toggle('expanded');
+    var toggle = el.nextElementSibling;
+    if (toggle) {
+        toggle.textContent = el.classList.contains('expanded') ? '收起' : '展开全文';
+    }
+}
+</script>
 
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
     <div class="card">
@@ -36,46 +119,192 @@
         {% if pending %}
         <div style="display: flex; flex-direction: column; gap: 12px;">
             {% for item in pending %}
-            <div class="candidate-card">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                    <div>
-                        <strong>{{ item.table_name }}</strong>
-                        <small style="display: block; color: #64748b;">记录 ID: {{ item.record_id }}</small>
-                        {% if item.id %}<small style="display: block; color: #64748b;">审核 ID: {{ item.id }}</small>{% endif %}
-                        {% if item.created_at %}<small style="display: block; color: #64748b;">创建时间: {{ item.created_at|localtime }}</small>{% endif %}
-                    </div>
-                    <div style="display: flex; gap: 6px;">
-                        <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;" onsubmit="return confirm('确认批准此候选知识？此操作将入库生效。')">
-                            <button type="submit" class="btn btn-sm btn-success">✓ 批准</button>
-                        </form>
-                        <form method="post" action="/console/audit/{{ item.id }}/reject" style="display: inline;" onsubmit="return confirm('确认驳回此候选知识？')">
-                            <button type="submit" class="btn btn-sm btn-danger">✗ 拒绝</button>
-                        </form>
-                    </div>
+            {% set has_source = item.source_context is defined and item.source_context %}
+            {% set conflicts = pending_conflicts.get(item.id, none) %}
+            {% set nv = item.new_value if item.new_value else {} %}
+            {% set has_temp_ids = (nv.entities and nv.entities[0].temp_id is defined and nv.entities[0].temp_id)
+                or (nv.rules and nv.rules[0].temp_id is defined and nv.rules[0].temp_id)
+                or (nv.relations and nv.relations[0].temp_id is defined and nv.relations[0].temp_id) %}
+
+            {# Wrapper form for per-item actions #}
+            <form id="form-{{ item.id }}" method="post" action="/console/audit/{{ item.id }}/approve"
+                  data-record="{{ item.id }}">
+                <input type="hidden" name="reviewer" value="console">
+                <input type="hidden" name="items_json" value="">
+            </form>
+
+            <div class="candidate-card" data-record="{{ item.id }}">
+                {# === Source info header === #}
+                {% if has_source %}
+                <div class="source-header">
+                    {% set st = item.source_context.source_type|default('manual') %}
+                    <span class="source-type-badge source-type-{{ st }}">
+                        {% if st == 'post_task' %}🔄 Post-Task
+                        {% elif st == 'cold_start' %}🚀 Cold Start
+                        {% elif st == 'feishu' %}📄 飞书导入
+                        {% else %}✋ 手动提交{% endif %}
+                    </span>
+                    {% if item.source_context.task_description %}
+                    <span class="source-badge">{{ item.source_context.task_description[:60] }}</span>
+                    {% endif %}
+                    {% if item.source_context.commit_sha %}
+                    <span class="source-badge"><code>{{ item.source_context.commit_sha[:12] }}</code></span>
+                    {% endif %}
+                    {% if item.source_context.document_title %}
+                    <span class="source-badge">{{ item.source_context.document_title[:40] }}</span>
+                    {% endif %}
+                    {% if item.created_at %}
+                    <span class="source-badge">{{ item.created_at|localtime }}</span>
+                    {% endif %}
                 </div>
 
-                {% if item.new_value %}
-                {% set nv = item.new_value %}
-
-                {# Source info #}
-                {% if nv._meta %}
-                <div class="candidate-section">
-                    <h4>来源</h4>
-                    <span class="source-badge">
-                        {% if nv._meta.source == 'post_task_hook' %}🔄 Post-Task Hook
-                        {% elif nv._meta.source == 'cold_start' %}🚀 Cold Start
-                        {% elif nv._meta.source == 'manual' %}✋ 手动提交
-                        {% elif nv._meta.source == 'feishu' %}📄 飞书导入
-                        {% else %}📡 {{ nv._meta.source }}{% endif %}
-                    </span>
-                    {% if nv._meta.confidence %}
-                    <span class="source-badge" style="margin-left: 4px;">
-                        置信度: {{ "%.0f"|format(nv._meta.confidence * 100) }}%
-                    </span>
+                {# Original text preview #}
+                {% if item.source_context.original_text %}
+                <div class="original-text" onclick="toggleText(this)">{{ item.source_context.original_text[:200] }}{% if item.source_context.original_text|length > 200 %}…{% endif %}</div>
+                {% if item.source_context.original_text|length > 200 %}
+                <span class="original-text-toggle" onclick="toggleText(this.previousElementSibling)">展开全文</span>
+                {% endif %}
+                {% endif %}
+                {% else %}
+                {# Backward compat: no source_context #}
+                <div class="source-header">
+                    <span class="source-badge">审核 ID: {{ item.id }}</span>
+                    {% if item.created_at %}
+                    <span class="source-badge">{{ item.created_at|localtime }}</span>
                     {% endif %}
                 </div>
                 {% endif %}
 
+                {# === Per-item candidate cards === #}
+                {% if has_temp_ids %}
+
+                {# Entities #}
+                {% if nv.entities %}
+                <div class="candidate-section">
+                    <h4>实体 ({{ nv.entities|length }})</h4>
+                    {% for ent in nv.entities %}
+                    {% set ns = namespace(conflict=none) %}
+                    {% if conflicts and conflicts.duplicates %}
+                    {% for dup in conflicts.duplicates %}
+                    {% if dup.temp_id == ent.temp_id %}{% set ns.conflict = dup %}{% endif %}
+                    {% endfor %}
+                    {% endif %}
+                    <div class="detail-card{% if ns.conflict %} conflict-card{% endif %}" data-temp-id="{{ ent.temp_id }}">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div>
+                                <strong>{{ ent.name|default('未命名') }}</strong>
+                                <code>{{ ent.type|default('?') }}</code>
+                                <code>{{ ent.domain|default('?') }}</code>
+                                {% if ns.conflict %}
+                                <span class="conflict-badge">⚠ 重复: {{ ns.conflict.existing_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% if ent.confidence is defined %}
+                            <span class="source-badge">{{ "%.0f"|format(ent.confidence * 100) }}%</span>
+                            {% endif %}
+                        </div>
+                        {% if ent.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ ent.description }}</p>
+                        {% endif %}
+                        <div class="item-actions">
+                            <button type="button" class="btn-approve-item" onclick="setItemAction({{ item.id }}, '{{ ent.temp_id }}', 'approve', this)">✓ 批准</button>
+                            <button type="button" class="btn-reject-item" onclick="setItemAction({{ item.id }}, '{{ ent.temp_id }}', 'reject', this)">✗ 拒绝</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Rules #}
+                {% if nv.rules %}
+                <div class="candidate-section">
+                    <h4>规则 ({{ nv.rules|length }})</h4>
+                    {% for rule in nv.rules %}
+                    {% set ns = namespace(conflict=none) %}
+                    {% if conflicts and conflicts.duplicates %}
+                    {% for dup in conflicts.duplicates %}
+                    {% if dup.temp_id == rule.temp_id %}{% set ns.conflict = dup %}{% endif %}
+                    {% endfor %}
+                    {% endif %}
+                    {% set sev = rule.severity|default('info') %}
+                    <div class="detail-card{% if ns.conflict %} conflict-card{% endif %}" style="border-left: 3px solid
+                        {% if sev == 'critical' %}#ef4444
+                        {% elif sev == 'warning' %}#f59e0b
+                        {% elif sev == 'error' %}#ef4444
+                        {% else %}#3b82f6{% endif %};" data-temp-id="{{ rule.temp_id }}">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div>
+                                <strong>{{ rule.name|default('未命名') }}</strong>
+                                <span class="badge badge-{{ sev }}" style="font-size: 0.7em;">{{ sev }}</span>
+                                <code>{{ rule.domain|default('?') }}</code>
+                                {% if ns.conflict %}
+                                <span class="conflict-badge">⚠ 重复: {{ ns.conflict.existing_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% if rule.confidence is defined %}
+                            <span class="source-badge">{{ "%.0f"|format(rule.confidence * 100) }}%</span>
+                            {% endif %}
+                        </div>
+                        {% if rule.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rule.description }}</p>
+                        {% endif %}
+                        {% if rule.conditions %}
+                        <details style="margin-top: 4px;">
+                            <summary style="cursor: pointer; color: #64748b; font-size: 0.85em;">查看条件</summary>
+                            <pre style="margin: 4px 0 0 0; font-size: 0.8em; background: #e2e8f0; padding: 6px; border-radius: 4px;">{{ rule.conditions }}</pre>
+                        </details>
+                        {% endif %}
+                        <div class="item-actions">
+                            <button type="button" class="btn-approve-item" onclick="setItemAction({{ item.id }}, '{{ rule.temp_id }}', 'approve', this)">✓ 批准</button>
+                            <button type="button" class="btn-reject-item" onclick="setItemAction({{ item.id }}, '{{ rule.temp_id }}', 'reject', this)">✗ 拒绝</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Relations #}
+                {% if nv.relations %}
+                <div class="candidate-section">
+                    <h4>关系 ({{ nv.relations|length }})</h4>
+                    {% for rel in nv.relations %}
+                    {% set ns = namespace(conflict=none) %}
+                    {% if conflicts and conflicts.duplicates %}
+                    {% for dup in conflicts.duplicates %}
+                    {% if dup.temp_id == rel.temp_id %}{% set ns.conflict = dup %}{% endif %}
+                    {% endfor %}
+                    {% endif %}
+                    <div class="detail-card{% if ns.conflict %} conflict-card{% endif %}" data-temp-id="{{ rel.temp_id }}">
+                        <div>
+                            <strong>{{ rel.source_name|default(rel.source|default('?')) }}</strong>
+                            <span style="color: #64748b;">&rarr;</span>
+                            <code>{{ rel.relation_type|default('?') }}</code>
+                            <span style="color: #64748b;">&rarr;</span>
+                            <strong>{{ rel.target_name|default(rel.target|default('?')) }}</strong>
+                            {% if ns.conflict %}
+                            <span class="conflict-badge">⚠ 重复: {{ ns.conflict.existing_name }}</span>
+                            {% endif %}
+                        </div>
+                        {% if rel.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rel.description }}</p>
+                        {% endif %}
+                        <div class="item-actions">
+                            <button type="button" class="btn-approve-item" onclick="setItemAction({{ item.id }}, '{{ rel.temp_id }}', 'approve', this)">✓ 批准</button>
+                            <button type="button" class="btn-reject-item" onclick="setItemAction({{ item.id }}, '{{ rel.temp_id }}', 'reject', this)">✗ 拒绝</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# Bulk actions for new-format items #}
+                <div class="bulk-actions">
+                    <button type="button" class="btn btn-sm btn-success" onclick="collectAndSubmit({{ item.id }}, 'approve')">全部批准</button>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认拒绝全部？')){collectAndSubmit({{ item.id }}, 'reject')}">全部拒绝</button>
+                </div>
+
+                {% else %}
+                {# === Backward compat: old format without temp_id === #}
                 {% if nv.entities %}
                 <div class="candidate-section">
                     <h4>实体 ({{ nv.entities|length }})</h4>
@@ -110,12 +339,6 @@
                         {% if rule.description %}
                         <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rule.description }}</p>
                         {% endif %}
-                        {% if rule.conditions %}
-                        <details style="margin-top: 4px;">
-                            <summary style="cursor: pointer; color: #64748b; font-size: 0.85em;">查看条件</summary>
-                            <pre style="margin: 4px 0 0 0; font-size: 0.8em; background: #e2e8f0; padding: 6px; border-radius: 4px;">{{ rule.conditions }}</pre>
-                        </details>
-                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
@@ -126,11 +349,11 @@
                     <h4>关系 ({{ nv.relations|length }})</h4>
                     {% for rel in nv.relations %}
                     <div class="detail-card">
-                        <strong>{{ rel.source|default('?') }}</strong>
+                        <strong>{{ rel.source_name|default(rel.source|default('?')) }}</strong>
                         <span style="color: #64748b;">&rarr;</span>
                         <code>{{ rel.relation_type|default('?') }}</code>
                         <span style="color: #64748b;">&rarr;</span>
-                        <strong>{{ rel.target|default('?') }}</strong>
+                        <strong>{{ rel.target_name|default(rel.target|default('?')) }}</strong>
                         {% if rel.description %}
                         <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rel.description }}</p>
                         {% endif %}
@@ -139,7 +362,21 @@
                 </div>
                 {% endif %}
 
-                {% if nv.confidence is defined and not nv._meta %}
+                {# Old-style bulk approve/reject with separate forms #}
+                <div class="bulk-actions">
+                    <form method="post" action="/console/audit/{{ item.id }}/approve" style="display: inline;" onsubmit="return confirm('确认批准此候选知识？')">
+                        <input type="hidden" name="reviewer" value="console">
+                        <button type="submit" class="btn btn-sm btn-success">✓ 批准</button>
+                    </form>
+                    <form method="post" action="/console/audit/{{ item.id }}/reject" style="display: inline;" onsubmit="return confirm('确认驳回此候选知识？')">
+                        <button type="submit" class="btn btn-sm btn-danger">✗ 拒绝</button>
+                    </form>
+                </div>
+
+                {% endif %}
+
+                {# Confidence bar (legacy) #}
+                {% if nv.confidence is defined and not has_source %}
                 <div class="candidate-section">
                     <h4>Confidence: {{ "%.0f"|format(nv.confidence * 100) }}%</h4>
                     <div class="confidence-bar">
@@ -153,8 +390,6 @@
                     <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8em;">查看原始数据</summary>
                     <pre style="margin: 4px 0; font-size: 0.75em; background: #f1f5f9; padding: 8px; border-radius: 4px; overflow-x: auto; max-height: 200px;">{{ nv | tojson_cn }}</pre>
                 </details>
-
-                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -198,8 +433,9 @@
     </div>
     <div style="line-height: 1.6;">
         <p><strong>待审核项：</strong>由 AI 提取或导入产生的知识条目，需要人工审核后才能生效。</p>
-        <p><strong>批准：</strong>将条目标记为已批准，并自动将候选项中的实体、规则、关系导入知识图谱。</p>
-        <p><strong>拒绝：</strong>拒绝条目，不会将其添加到知识图谱。</p>
+        <p><strong>逐条审核：</strong>每条实体/规则/关系可独立批准或拒绝，点击对应按钮后提交。</p>
+        <p><strong>冲突提示：</strong>系统自动检测与已有知识的重复，红色边框标注。</p>
+        <p><strong>全部批准/拒绝：</strong>一次性操作所有候选项。</p>
         <p><strong>审核历史：</strong>记录所有审核操作，便于追溯和审计。</p>
     </div>
 </div>

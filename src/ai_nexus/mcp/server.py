@@ -178,13 +178,14 @@ async def submit_knowledge_candidate(
         # 生成临时 record_id 用于审核流程（正式审核后会有真实的 entity/rule ID）
         import hashlib
         data_hash = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()[:8]
-        temp_id = int(data_hash, 16) % (10 ** 8)  # 转为 8 位整数
+        hash_record_id = int(data_hash, 16) % (10 ** 8)  # 转为 8 位整数
 
         audit_log = await repo.create(AuditLogCreate(
             table_name=f"temp_{type}",  # 临时表名标识
-            record_id=temp_id,
+            record_id=hash_record_id,
             action="submit_candidate",
             new_value={**data, "_meta": {"source": source, "confidence": confidence}},
+            source_context={"source_type": source},
         ))
         return json.dumps({
             "status": "submitted",

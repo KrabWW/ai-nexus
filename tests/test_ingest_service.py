@@ -81,6 +81,7 @@ class TestIngestService:
         rule_repo._db = mock_db
 
         audit_repo = MagicMock()
+        audit_repo.create = AsyncMock(return_value=MagicMock(id=1))
 
         return {
             "entity_repo": entity_repo,
@@ -126,8 +127,7 @@ class TestIngestService:
 
         assert result["total"] == 2
         assert result["processed"] == 2
-        assert result["entities"] == 2  # One entity per doc
-        assert result["rules"] == 2  # One rule per doc
+        assert result["submitted"] == 4  # 1 entity + 1 rule per doc, 2 docs
         assert result["failed"] == 0
         assert len(result["errors"]) == 0
 
@@ -149,8 +149,7 @@ class TestIngestService:
 
         assert result["total"] == 2
         assert result["processed"] == 2
-        assert result["entities"] == 2
-        assert result["rules"] == 2
+        assert result["submitted"] == 0  # dry-run mode doesn't submit
 
     @pytest.mark.asyncio
     async def test_ingest_document_basic(
@@ -170,8 +169,8 @@ class TestIngestService:
                 )
 
         assert not result.get("skipped")
-        assert result["entities"] == 1
-        assert result["rules"] == 1
+        assert result["submitted"] == 2  # 1 entity + 1 rule
+        assert result["status"] == "pending_audit"
 
         # Verify extraction was called
         mock_extraction_service.extract.assert_called_once()
@@ -188,9 +187,8 @@ class TestIngestService:
             title="Empty Doc",
         )
 
-        assert result["entities"] == 0
-        assert result["relations"] == 0
-        assert result["rules"] == 0
+        assert result["submitted"] == 0
+        assert result["status"] == "direct"
 
         # Extraction should not be called for empty content
         mock_extraction_service.extract.assert_not_called()
@@ -226,9 +224,8 @@ class TestIngestService:
                 )
 
         assert result.get("skipped")
-        assert result["entities"] == 0
-        assert result["relations"] == 0
-        assert result["rules"] == 0
+        assert result["submitted"] == 0
+        assert result["status"] == "direct"
 
         # Extraction should not be called for unchanged docs
         mock_extraction_service.extract.assert_not_called()
@@ -262,7 +259,7 @@ class TestIngestService:
                 )
 
         assert not result.get("skipped")
-        assert result["entities"] == 1
+        assert result["submitted"] == 2  # 1 entity + 1 rule
 
         # Extraction should be called for changed docs
         mock_extraction_service.extract.assert_called_once()

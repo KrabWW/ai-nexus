@@ -5,6 +5,7 @@ and for handling development workflow hook requests.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,7 @@ class AuditLogCreate(BaseModel):
     old_value: dict | None = None
     new_value: dict | None = None
     reviewer: str | None = None
+    source_context: dict | None = None
 
 
 class AuditLog(BaseModel):
@@ -46,6 +48,7 @@ class AuditLog(BaseModel):
     old_value: dict | None = None
     new_value: dict | None = None
     reviewer: str | None = None
+    source_context: dict | None = None
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -93,3 +96,20 @@ class HookRequest(BaseModel):
     affected_files: list[str] | None = Field(
         default=None, description="Files affected by the change"
     )
+
+
+class ItemAction(BaseModel):
+    """Per-item approval/rejection action for a single candidate item."""
+
+    temp_id: str
+    action: Literal["approve", "reject"]
+
+
+class ApproveRequest(BaseModel):
+    """Request body for per-item approval of a candidate.
+
+    When items is None, all items are approved (backward compat).
+    """
+
+    reviewer: str = "console"
+    items: list[ItemAction] | None = None

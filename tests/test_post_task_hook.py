@@ -59,7 +59,7 @@ def test_post_task_successful_extraction(_mock_db: MagicMock) -> None:
         42, "extraction", 0, "submit_candidate",
         json.dumps({"hash": hashlib.md5(b"build order service").hexdigest()}),
         json.dumps(result.model_dump()),
-        "post_task_hook", "2026-01-01T00:00:00",
+        "post_task_hook", None, "2026-01-01T00:00:00",
     )
 
     resp = app.post("/api/hooks/post-task", json={
@@ -108,7 +108,7 @@ def test_post_task_idempotency(_mock_db: MagicMock) -> None:
         10, "extraction", 0, "submit_candidate",
         json.dumps({"hash": task_hash}),
         json.dumps(cached_value),
-        "post_task_hook", "2026-01-01T00:00:00",
+        "post_task_hook", None, "2026-01-01T00:00:00",
     )]
 
     resp = app.post("/api/hooks/post-task", json={

@@ -68,9 +68,8 @@ class IngestResult(BaseModel):
         total: 总文档数（批量导入时）
         processed: 处理的文档数
         skipped: 跳过的文档数（内容未变更）
-        entities: 提取的实体总数
-        relations: 提取的关系总数
-        rules: 提取的规则总数
+        submitted: 提交到审核队列的知识条目数
+        audit_status: 审核状态（"pending_audit" 或 "direct"）
         failed: 失败的文档数
         errors: 错误信息列表
     """
@@ -78,9 +77,8 @@ class IngestResult(BaseModel):
     total: int = 0
     processed: int = 0
     skipped: int = 0
-    entities: int = 0
-    relations: int = 0
-    rules: int = 0
+    submitted: int = 0
+    audit_status: str = "direct"
     failed: int = 0
     errors: list[str] = []
 
@@ -197,9 +195,8 @@ async def ingest_document(
             total=1,
             processed=0 if result.get("skipped") else 1,
             skipped=1 if result.get("skipped") else 0,
-            entities=result.get("entities", 0),
-            relations=result.get("relations", 0),
-            rules=result.get("rules", 0),
+            submitted=result.get("submitted", 0),
+            audit_status=result.get("status", "direct"),
         )
     except Exception as e:
         raise HTTPException(

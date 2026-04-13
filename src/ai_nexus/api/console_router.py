@@ -3,6 +3,7 @@
 提供基于 Jinja2 模板的 Web 管理界面，用于管理实体、规则、关系等。
 """
 
+import json as _json
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Annotated
 from urllib.parse import urlencode
@@ -20,8 +21,6 @@ from ai_nexus.api.dependencies import (
     get_relation_repo,
     get_rule_repo,
 )
-import json as _json
-
 from ai_nexus.models.entity import EntityCreate, EntityUpdate
 from ai_nexus.models.relation import RelationCreate
 from ai_nexus.models.rule import RuleCreate, RuleUpdate
@@ -509,9 +508,18 @@ async def audit_list(
     request: Request,
     audit_repo: AuditRepoInj,
     relation_repo: RelationRepoInj,
+    extraction_svc: ExtractionSvcInj,
 ):
     """审核工作流页面，显示待审核候选和审核历史。"""
     pending = await audit_repo.list_pending()
+
+    # Detect conflicts for each pending item
+    pending_conflicts: dict[int, dict] = {}
+    for item in pending:
+        if item.new_value:
+            conflicts = await extraction_svc.detect_conflicts(item.new_value)
+            if conflicts["duplicates"]:
+                pending_conflicts[item.id] = conflicts
 
     # 获取所有审核日志（包括已处理的）
     all_logs = await audit_repo._db.fetchall(
@@ -542,6 +550,7 @@ async def audit_list(
     return templates.TemplateResponse(request, "audit/list.html",{
             "request": request,
             "pending": pending,
+            "pending_conflicts": pending_conflicts,
             "audit_history": audit_history,
             "pending_relations_count": pending_relations_count,
             "active_page": "audit",
@@ -554,21 +563,45 @@ async def approve_audit_item(
     record_id: int,
     audit_repo: AuditRepoInj,
     extraction_svc: ExtractionSvcInj,
+    reviewer: str = Form(default="console"),
+    items_json: str = Form(default=""),
 ):
-    """批准审核项。"""
+    """批准审核项，支持逐条审核。"""
+    import json as _json
+
     from ai_nexus.models.audit import AuditLogCreate
+
+    # Parse per-item actions if provided
+    approved_temp_ids: set[str] | None = None
+    if items_json and items_json.strip():
+        try:
+            items = _json.loads(items_json)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid items_json") from exc
+        # Validate all temp_ids belong to this record
+        prefix = f"{record_id}_"
+        for item in items:
+            tid = item.get("temp_id", "")
+            if tid and not tid.startswith(prefix):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"temp_id '{tid}' does not belong to record {record_id}",
+                )
+        approved_temp_ids = {
+            item["temp_id"] for item in items if item.get("action") == "approve"
+        }
 
     await audit_repo.create(
         AuditLogCreate(
             table_name="knowledge_audit_log",
             record_id=record_id,
             action="approve",
-            reviewer="console",
+            reviewer=reviewer,
         )
     )
     original = await audit_repo.get_by_id(record_id)
     if original and original.action == "submit_candidate" and original.new_value:
-        await extraction_svc.ingest_candidate(original.new_value)
+        await extraction_svc.ingest_candidate(original.new_value, approved_temp_ids)
     return RedirectResponse(url="/console/audit", status_code=303)
 
 

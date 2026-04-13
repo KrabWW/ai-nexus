@@ -8,9 +8,7 @@ import logging
 from typing import Any
 
 from ai_nexus.extraction.extraction_service import ExtractionService
-from ai_nexus.models.entity import EntityCreate
-from ai_nexus.models.relation import RelationCreate
-from ai_nexus.models.rule import RuleCreate
+from ai_nexus.models.audit import AuditLogCreate
 from ai_nexus.proxy.feishu_proxy import FeishuProxy
 from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.entity_repo import EntityRepo
@@ -85,9 +83,7 @@ class IngestService:
         skipped = 0
         processed = 0
         failed = 0
-        total_entities = 0
-        total_relations = 0
-        total_rules = 0
+        total_submitted = 0
         errors: list[str] = []
 
         for doc in docs:
@@ -109,9 +105,7 @@ class IngestService:
                     skipped += 1
                 else:
                     processed += 1
-                    total_entities += result.get("entities", 0)
-                    total_relations += result.get("relations", 0)
-                    total_rules += result.get("rules", 0)
+                    total_submitted += result.get("submitted", 0)
 
             except Exception as e:
                 failed += 1
@@ -123,9 +117,7 @@ class IngestService:
             "total": total,
             "skipped": skipped,
             "processed": processed,
-            "entities": total_entities,
-            "relations": total_relations,
-            "rules": total_rules,
+            "submitted": total_submitted,
             "failed": failed,
             "errors": errors,
         }
@@ -163,7 +155,7 @@ class IngestService:
             content = await self._feishu.get_doc_content(doc_token)
 
         if not content:
-            return {"skipped": False, "entities": 0, "relations": 0, "rules": 0}
+            return {"skipped": False, "submitted": 0, "status": "direct"}
 
         # Compute content hash for incremental import
         content_hash = FeishuProxy.compute_content_hash(content)
@@ -173,7 +165,7 @@ class IngestService:
             existing = await self._get_existing_doc(space_id, doc_token)
             if existing and existing.get("content_hash") == content_hash:
                 logger.info("Skipping unchanged document: %s", title)
-                return {"skipped": True, "entities": 0, "relations": 0, "rules": 0}
+                return {"skipped": True, "submitted": 0, "status": "direct"}
 
         # Extract knowledge from content
         result = await self._extraction.extract(content, domain_hint=domain_hint)
@@ -190,58 +182,21 @@ class IngestService:
                 "extracted": result.model_dump(),
             }
 
-        # Process and store extracted knowledge
-        entity_ids: list[int] = []
-        relation_ids: list[int] = []
-        rule_ids: list[int] = []
-
-        # Create entities
-        for entity in result.entities:
-            entity_data = EntityCreate(
-                name=entity.name,
-                type=entity.type,
-                description=entity.description or f"{entity.type}: {entity.name}",
-                domain=entity.domain,
-                status="pending",  # Extracted entities need approval
-                source="ai_extracted",
-            )
-            created = await self._entities.create(entity_data)
-            entity_ids.append(created.id)
-
-        # Create relations (need to map entity names to IDs first)
-        entity_name_to_id = await self._map_entity_names_to_ids(
-            result.entities, result.relations, domain_hint or "general"
-        )
-
-        for relation in result.relations:
-            source_id = entity_name_to_id.get(relation.source_name)
-            target_id = entity_name_to_id.get(relation.target_name)
-
-            if source_id and target_id:
-                relation_data = RelationCreate(
-                    source_entity_id=source_id,
-                    relation_type=relation.relation_type or relation.type,
-                    target_entity_id=target_id,
-                    description=relation.description,
-                    status="pending",
-                    source="ai_extracted",
-                )
-                created = await self._relations.create(relation_data)
-                relation_ids.append(created.id)
-
-        # Create rules
-        for rule in result.rules:
-            rule_data = RuleCreate(
-                name=rule.name,
-                description=rule.description,
-                domain=rule.domain,
-                severity=rule.severity,
-                status="pending",  # Extracted rules need approval
-                source="ai_extracted",
-                confidence=rule.confidence,
-            )
-            created = await self._rules.create(rule_data)
-            rule_ids.append(created.id)
+        # Submit through audit log for review
+        extraction_data = result.model_dump()
+        source_type = "feishu" if space_id else "document"
+        await self._audit.create(AuditLogCreate(
+            table_name="knowledge_audit_log",
+            record_id=0,
+            action="submit_candidate",
+            new_value={**extraction_data, "_meta": {"source": source_type, "confidence": 0.7}},
+            source_context={
+                "source_type": source_type,
+                "space_id": space_id,
+                "document_title": title,
+                "original_text": content[:500] if content else None,
+            },
+        ))
 
         # Update ingest tracking for Feishu documents
         if doc_token and space_id:
@@ -251,15 +206,13 @@ class IngestService:
                 doc_title=title,
                 content_hash=content_hash,
                 entities_count=len(result.entities),
-                relations_count=len(relation_ids),
+                relations_count=len(result.relations),
                 rules_count=len(result.rules),
             )
 
         return {
-            "skipped": False,
-            "entities": len(result.entities),
-            "relations": len(relation_ids),
-            "rules": len(result.rules),
+            "submitted": result.count_total(),
+            "status": "pending_audit",
         }
 
     async def _get_existing_doc(self, space_id: str, doc_token: str) -> dict[str, Any] | None:
@@ -331,7 +284,7 @@ class IngestService:
         if existing:
             await db.execute(
                 """UPDATE ingest_tracking
-                   SET doc_title = ?, content_hash = ?, status = 'done',
+                   SET doc_title = ?, content_hash = ?, status = 'pending_audit',
                        entities_count = ?, relations_count = ?, rules_count = ?,
                        last_imported_at = CURRENT_TIMESTAMP
                    WHERE space_id = ? AND doc_token = ?""",
@@ -350,7 +303,7 @@ class IngestService:
                 """INSERT INTO ingest_tracking
                    (space_id, doc_token, doc_title, content_hash, status,
                     entities_count, relations_count, rules_count)
-                   VALUES (?, ?, ?, ?, 'done', ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, 'pending_audit', ?, ?, ?)""",
                 (
                     space_id,
                     doc_token,

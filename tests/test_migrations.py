@@ -25,7 +25,7 @@ async def test_migration_001_applied(db: Database):
     await db.run_migrations()
     row = await db.fetchone("SELECT MAX(version) FROM schema_version")
     assert row is not None
-    assert row[0] == 5
+    assert row[0] == 7
 
 
 async def test_run_migrations_idempotent(db: Database):

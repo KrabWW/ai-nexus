@@ -281,8 +281,7 @@ class TestE2EIngestWithMocks:
         assert result["total"] == 2
         assert result["processed"] == 2
         assert result["failed"] == 0
-        assert result["entities"] > 0
-        assert result["rules"] > 0
+        assert result["submitted"] > 0  # items submitted to audit queue
 
         # Verify Feishu API was called
         mock_feishu_proxy.list_space_docs.assert_called_once_with("test_space")
@@ -290,11 +289,8 @@ class TestE2EIngestWithMocks:
         # Verify extraction was called for each document
         assert mock_extraction_service.extract.call_count == 2
 
-        # Verify entities were created in database
-        assert mock_repos["entity_repo"].create.call_count > 0
-
-        # Verify rules were created in database
-        assert mock_repos["rule_repo"].create.call_count > 0
+        # Verify audit log was used instead of direct entity creation
+        assert mock_repos["audit_repo"].create.call_count > 0
 
     @pytest.mark.asyncio
     async def test_audit_workflow_submission(

@@ -18,12 +18,14 @@ def _row_to_log(row: tuple[Any, ...]) -> AuditLog:
         old_value=json.loads(row[4]) if row[4] else None,
         new_value=json.loads(row[5]) if row[5] else None,
         reviewer=row[6],
-        created_at=row[7],
+        source_context=json.loads(row[7]) if row[7] else None,
+        created_at=row[8],
     )
 
 
 _SELECT = (
-    "SELECT id, table_name, record_id, action, old_value, new_value, reviewer, created_at "
+    "SELECT id, table_name, record_id, action, "
+    "old_value, new_value, reviewer, source_context, created_at "
     "FROM knowledge_audit_log"
 )
 
@@ -35,8 +37,8 @@ class AuditRepo:
     async def create(self, data: AuditLogCreate) -> AuditLog:
         cursor = await self._db.execute(
             "INSERT INTO knowledge_audit_log "
-            "(table_name, record_id, action, old_value, new_value, reviewer) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(table_name, record_id, action, old_value, new_value, reviewer, source_context) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 data.table_name,
                 data.record_id,
@@ -44,9 +46,33 @@ class AuditRepo:
                 json.dumps(data.old_value) if data.old_value else None,
                 json.dumps(data.new_value) if data.new_value else None,
                 data.reviewer,
+                json.dumps(data.source_context) if data.source_context else None,
             ),
         )
-        row = await self._db.fetchone(f"{_SELECT} WHERE id = ?", (cursor.lastrowid,))
+        log_id = cursor.lastrowid
+
+        # Inject temp_id into new_value items for per-item review
+        if data.new_value and isinstance(data.new_value, dict):
+            new_value = data.new_value.copy()
+            updated = False
+            for key, items in [
+                ("entities", new_value.get("entities", [])),
+                ("relations", new_value.get("relations", [])),
+                ("rules", new_value.get("rules", [])),
+            ]:
+                if isinstance(items, list):
+                    for idx, item in enumerate(items):
+                        if isinstance(item, dict) and "temp_id" not in item:
+                            singular = {"entities": "entity", "rules": "rule", "relations": "relation"}.get(key, key)
+                            item["temp_id"] = f"{log_id}_{singular}_{idx}"
+                            updated = True
+            if updated:
+                await self._db.execute(
+                    "UPDATE knowledge_audit_log SET new_value = ? WHERE id = ?",
+                    (json.dumps(new_value), log_id),
+                )
+
+        row = await self._db.fetchone(f"{_SELECT} WHERE id = ?", (log_id,))
         return _row_to_log(row)  # type: ignore[arg-type]
 
     async def list_by_record(self, table_name: str, record_id: int) -> list[AuditLog]:

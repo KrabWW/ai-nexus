@@ -365,6 +365,11 @@ async def cold_start(body: ColdStartRequest, extraction_svc: ExtractionSvc, repo
             action="submit_candidate",
             new_value=candidates,
             reviewer="cold_start",
+            source_context={
+                "source_type": "cold_start",
+                "domain": body.domain,
+                "description": body.description,
+            },
         ))
         audit_id = log.id
 
@@ -423,6 +428,12 @@ async def post_task_hook(body: PostTaskRequest, extraction_svc: ExtractionSvc, r
             old_value={"hash": task_hash},
             new_value=candidates,
             reviewer="post_task_hook",
+            source_context={
+                "source_type": "post_task",
+                "task_description": body.task_description,
+                "original_text": (body.summary or body.task_description)[:500],
+                "commit_sha": body.idempotency_key,
+            },
         ))
         audit_id = log.id
 
