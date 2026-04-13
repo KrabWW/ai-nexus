@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from ai_nexus.api.dependencies import (
     get_audit_repo,
+    get_code_reference_repo,
     get_entity_repo,
     get_extraction_service,
     get_graph_service,
@@ -23,6 +24,7 @@ from ai_nexus.models.entity import EntityCreate, EntityUpdate
 from ai_nexus.models.relation import RelationCreate
 from ai_nexus.models.rule import RuleCreate, RuleUpdate
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
@@ -56,6 +58,7 @@ RuleRepoInj = Annotated[RuleRepo, Depends(get_rule_repo)]
 RelationRepoInj = Annotated[RelationRepo, Depends(get_relation_repo)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
 ExtractionSvcInj = Annotated[ExtractionService, Depends(get_extraction_service)]
+CodeRefRepoInj = Annotated[CodeReferenceRepo, Depends(get_code_reference_repo)]
 
 
 # --- Base Dashboard ---
@@ -338,6 +341,25 @@ async def create_rule(
     )
     await rule_repo.create(data)
     return RedirectResponse(url="/console/rules", status_code=303)
+
+
+@router.get("/rules/{rule_id}/detail")
+async def rule_detail(
+    rule_id: int,
+    request: Request,
+    rule_repo: RuleRepoInj,
+    code_ref_repo: CodeRefRepoInj,
+):
+    """规则详情页面，显示关联的代码锚定引用。"""
+    rule = await rule_repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    code_refs = await code_ref_repo.list_by_rule(rule_id)
+    return templates.TemplateResponse(
+        request,
+        "rules/detail.html",
+        {"request": request, "rule": rule, "code_refs": code_refs, "active_page": "rules"},
+    )
 
 
 @router.get("/rules/{rule_id}/edit")

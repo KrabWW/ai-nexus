@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}规则详情 - {{ rule.name }} - AI Nexus{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📜 规则详情</h1>
+    <p>{{ rule.name }}</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">基本信息</h2>
+        <div>
+            <a href="/console/rules/{{ rule.id }}/edit" class="btn btn-secondary">编辑</a>
+            <a href="/console/rules" class="btn btn-secondary">返回列表</a>
+        </div>
+    </div>
+    <table>
+        <tr><td style="width:120px; color:#64748b;">ID</td><td>{{ rule.id }}</td></tr>
+        <tr><td style="color:#64748b;">名称</td><td><strong>{{ rule.name }}</strong></td></tr>
+        <tr><td style="color:#64748b;">描述</td><td>{{ rule.description }}</td></tr>
+        <tr><td style="color:#64748b;">领域</td><td>{{ rule.domain }}</td></tr>
+        <tr>
+            <td style="color:#64748b;">严重性</td>
+            <td><span class="badge badge-{{ rule.severity }}">{{ rule.severity }}</span></td>
+        </tr>
+        <tr>
+            <td style="color:#64748b;">状态</td>
+            <td>
+                <span class="badge badge-{{ 'success' if rule.status == 'approved' else ('error' if rule.status == 'rejected' else 'warning') }}">
+                    {{ rule.status }}
+                </span>
+            </td>
+        </tr>
+        <tr><td style="color:#64748b;">置信度</td><td>{{ (rule.confidence * 100)|int }}%</td></tr>
+        <tr><td style="color:#64748b;">来源</td><td>{{ rule.source }}</td></tr>
+        <tr><td style="color:#64748b;">创建时间</td><td>{{ rule.created_at | localtime }}</td></tr>
+    </table>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h2 class="card-title">代码锚定引用 ({{ code_refs | length }})</h2>
+    </div>
+
+    {% if code_refs %}
+    {% for ref in code_refs %}
+    <div class="card" style="margin: 12px 16px; border-left: 3px solid
+        {% if ref.reference_type == 'violation' %}#ef4444
+        {% elif ref.reference_type == 'risk' %}#f59e0b
+        {% else %}#3b82f6{% endif %};">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div>
+                <span class="badge" style="background-color:
+                    {% if ref.reference_type == 'violation' %}#fef2f2; color:#dc2626
+                    {% elif ref.reference_type == 'risk' %}#fffbeb; color:#d97706
+                    {% else %}#eff6ff; color:#2563eb{% endif %};">
+                    {{ ref.reference_type }}
+                </span>
+                <span class="badge" style="background-color: #f1f5f9; color: #475569;">
+                    {{ ref.source }}
+                </span>
+                <strong style="margin-left: 8px;">{{ ref.file_path }}</strong>
+                {% if ref.line_start and ref.line_end %}
+                <span style="color: #64748b;">:L{{ ref.line_start }}-{{ ref.line_end }}</span>
+                {% elif ref.line_start %}
+                <span style="color: #64748b;">:L{{ ref.line_start }}</span>
+                {% endif %}
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                {% if ref.repo_url and ref.commit_sha %}
+                <a href="{{ ref.repo_url }}/blob/{{ ref.commit_sha }}/{{ ref.file_path }}{% if ref.line_start %}#L{{ ref.line_start }}{% endif %}{% if ref.line_end %}-L{{ ref.line_end }}{% endif %}"
+                   target="_blank" class="btn btn-sm btn-primary">
+                    在 GitHub 查看
+                </a>
+                {% endif %}
+                <span style="color: #94a3b8; font-size: 12px;">{{ ref.branch }}</span>
+            </div>
+        </div>
+
+        {% if ref.snippet %}
+        <pre style="background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 4px;
+                     overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 0;">{{ ref.snippet }}</pre>
+        {% endif %}
+
+        <div style="margin-top: 8px; font-size: 12px; color: #94a3b8;">
+            commit: <code>{{ ref.commit_sha[:12] }}</code>
+            {% if ref.detected_at %}
+            &nbsp;|&nbsp; 检测于 {{ ref.detected_at | localtime }}
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔗</div>
+        <p>暂无代码锚定引用</p>
+        <p style="color: #64748b; font-size: 14px;">通过 pre-commit hook 自动捕获规则违规时，关联的代码位置会出现在这里。</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

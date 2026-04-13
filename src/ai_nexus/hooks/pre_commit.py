@@ -21,6 +21,42 @@ AI_NEXUS_URL = os.environ.get("AI_NEXUS_URL", "http://localhost:8000")
 TIMEOUT = float(os.environ.get("AI_NEXUS_HOOK_TIMEOUT", "5.0"))
 
 
+async def _git_output(*args: str) -> str | None:
+    """Run a git command and return stdout, or None on failure."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip() if proc.returncode == 0 and stdout.strip() else None
+
+
+async def _get_staged_diff() -> str | None:
+    """Get staged changes diff via git CLI."""
+    return await _git_output("diff", "--cached")
+
+
+async def _get_commit_sha() -> str | None:
+    """Get current HEAD commit SHA."""
+    return await _git_output("rev-parse", "HEAD")
+
+
+async def _get_repo_url() -> str | None:
+    """Get remote origin URL, converted to HTTPS if SSH."""
+    url = await _git_output("remote", "get-url", "origin")
+    if url and url.startswith("git@"):
+        url = url.replace(":", "/").replace("git@", "https://")
+        if url.endswith(".git"):
+            url = url[:-4]
+    return url
+
+
+async def _get_branch() -> str | None:
+    """Get current branch name."""
+    return await _git_output("rev-parse", "--abbrev-ref", "HEAD")
+
+
 async def main() -> None:
     """Main hook entry point.
 
@@ -36,22 +72,43 @@ async def main() -> None:
         hook_input = json.loads(hook_input_str)
 
         # Extract change information
-        # The hook receives info about staged changes
         tool_input = hook_input.get("tool_input", {})
         change_description = json.dumps(tool_input, ensure_ascii=False)
 
+        # Gather git context (best-effort, silent on failure)
+        diff_content = await _get_staged_diff()
+        commit_sha = await _get_commit_sha()
+        repo_url = await _get_repo_url()
+        branch = await _get_branch()
+
         # Call the pre-commit API
+        payload = {
+            "change_description": change_description,
+            "diff_summary": tool_input.get("diff"),
+        }
+        if diff_content:
+            payload["diff_content"] = diff_content
+        if commit_sha:
+            payload["commit_sha"] = commit_sha
+        if repo_url:
+            payload["repo_url"] = repo_url
+        if branch:
+            payload["branch"] = branch
+
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.post(
                 f"{AI_NEXUS_URL}/api/hooks/pre-commit",
-                json={
-                    "change_description": change_description,
-                    "diff_summary": tool_input.get("diff"),
-                },
+                json=payload,
             )
             if response.status_code == 200:
                 data = response.json()
-                violations = data.get("violations", [])
+
+                # Collect all violations from errors/warnings/infos
+                violations = (
+                    data.get("errors", [])
+                    + data.get("warnings", [])
+                    + data.get("infos", [])
+                )
 
                 if violations:
                     # Output violation warnings
@@ -85,7 +142,7 @@ async def main() -> None:
                             await client.post(
                                 f"{AI_NEXUS_URL}/api/violations/events",
                                 json={
-                                    "rule_id": violation.get("rule_id"),
+                                    "rule_id": violation.get("rule_id") or violation.get("rule"),
                                     "change_description": change_description,
                                     "resolution": "pending",
                                 },

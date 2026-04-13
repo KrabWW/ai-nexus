@@ -3,6 +3,7 @@
 from fastapi import Request
 
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
@@ -37,3 +38,7 @@ def get_relation_repo(request: Request) -> RelationRepo:
 
 def get_extraction_service(request: Request) -> ExtractionService:
     return request.app.state.extraction_service
+
+
+def get_code_reference_repo(request: Request) -> CodeReferenceRepo:
+    return request.app.state.code_reference_repo

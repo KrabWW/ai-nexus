@@ -18,6 +18,7 @@ from ai_nexus.db.sqlite import Database
 from ai_nexus.mcp.server import init_services, mcp
 from ai_nexus.proxy.mem0_proxy import Mem0Proxy
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
@@ -49,8 +50,9 @@ async def db_lifespan(app: FastAPI):
     graph_service = GraphService(entity_repo, relation_repo, rule_repo)
     query_service = QueryService(graph_service, mem0_proxy)
 
-    # 初始化 violation repo 和 flywheel service
+    # 初始化 violation repo, code reference repo 和 flywheel service
     violation_repo = ViolationRepo(db)
+    code_reference_repo = CodeReferenceRepo(db)
     flywheel_service = FlywheelService(rule_repo, violation_repo)
 
     # 初始化 extraction service
@@ -67,6 +69,7 @@ async def db_lifespan(app: FastAPI):
     app.state.query_service = query_service
     app.state.audit_repo = audit_repo
     app.state.violation_repo = violation_repo
+    app.state.code_reference_repo = code_reference_repo
     app.state.flywheel_service = flywheel_service
     app.state.extraction_service = extraction_service
     init_services(graph_service, query_service, audit_repo)

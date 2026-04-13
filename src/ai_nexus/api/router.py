@@ -1,6 +1,7 @@
 """REST API 路由：知识图谱 CRUD + 统一搜索。"""
 
 import hashlib
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -8,17 +9,22 @@ from pydantic import BaseModel
 
 from ai_nexus.api.dependencies import (
     get_audit_repo,
+    get_code_reference_repo,
     get_extraction_service,
     get_graph_service,
     get_query_service,
 )
 from ai_nexus.models.audit import AuditLog, AuditLogCreate
+from ai_nexus.models.code_reference import CodeReference, CodeReferenceCreate
 from ai_nexus.models.entity import Entity, EntityCreate, EntityUpdate
 from ai_nexus.models.rule import Rule, RuleCreate, RuleUpdate
 from ai_nexus.repos.audit_repo import AuditRepo
+from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -26,6 +32,7 @@ GraphSvc = Annotated[GraphService, Depends(get_graph_service)]
 QuerySvc = Annotated[QueryService, Depends(get_query_service)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
 ExtractionSvc = Annotated[ExtractionService, Depends(get_extraction_service)]
+CodeRefRepoInj = Annotated[CodeReferenceRepo, Depends(get_code_reference_repo)]
 
 
 class PaginatedResponse(BaseModel):
@@ -234,6 +241,10 @@ class PreCommitRequest(BaseModel):
     change_description: str
     affected_entities: list[str] | None = None
     diff_summary: str | None = None
+    diff_content: str | None = None
+    commit_sha: str | None = None
+    branch: str | None = None
+    repo_url: str | None = None
 
 
 @router.post("/hooks/pre-plan")
@@ -243,17 +254,26 @@ async def pre_plan_hook(body: PrePlanRequest, graph_svc: GraphSvc):
 
 
 @router.post("/hooks/pre-commit")
-async def pre_commit_hook(body: PreCommitRequest, query_svc: QuerySvc):
+async def pre_commit_hook(
+    body: PreCommitRequest,
+    query_svc: QuerySvc,
+    code_ref_repo: CodeRefRepoInj,
+):
+    from ai_nexus.services.ast_analyzer import extract_keywords_from_path, keywords_overlap
+    from ai_nexus.services.diff_parser import extract_snippet, parse_unified_diff
+
     keywords = body.affected_entities or [body.change_description]
     errors = []
     warnings = []
     infos = []
+    matched_rules: list[Any] = []
     for kw in keywords:
         rules = await query_svc.query_rules(kw, limit=5)
         for rule in rules:
             if rule.status == "approved":
                 violation = {
                     "rule": rule.name,
+                    "rule_id": rule.id,
                     "description": rule.description,
                     "severity": rule.severity or "info",
                 }
@@ -263,11 +283,44 @@ async def pre_commit_hook(body: PreCommitRequest, query_svc: QuerySvc):
                     warnings.append(violation)
                 else:
                     infos.append(violation)
+                matched_rules.append(rule)
+
+    # Code reference capture (only when diff + commit_sha provided)
+    code_refs_created = 0
+    if body.diff_content and body.commit_sha:
+        try:
+            file_diffs = parse_unified_diff(body.diff_content)
+            for rule in matched_rules:
+                for file_diff in file_diffs:
+                    file_kw = extract_keywords_from_path(file_diff.file_path)
+                    if keywords_overlap(file_kw, rule):
+                        for hunk in file_diff.hunks:
+                            await code_ref_repo.create(
+                                CodeReferenceCreate(
+                                    rule_id=rule.id,
+                                    file_path=file_diff.file_path,
+                                    line_start=hunk.line_start,
+                                    line_end=hunk.line_end,
+                                    snippet=extract_snippet(hunk.content),
+                                    repo_url=body.repo_url,
+                                    commit_sha=body.commit_sha,
+                                    branch=body.branch or "main",
+                                    reference_type="violation"
+                                    if rule.severity == "critical"
+                                    else "risk",
+                                    source="pre_commit",
+                                )
+                            )
+                            code_refs_created += 1
+        except Exception as e:
+            logger.warning("Code reference capture failed: %s", e, exc_info=True)
+
     return {
         "errors": errors,
         "warnings": warnings,
         "infos": infos,
         "passed": len(errors) == 0,
+        "code_references_created": code_refs_created,
     }
 
 
@@ -373,4 +426,48 @@ async def post_task_hook(body: PostTaskRequest, extraction_svc: ExtractionSvc, r
         "audit_id": audit_id,
         "candidates": candidates if has_content else None,
     }
+
+
+# --- Code References ---
+
+
+@router.get("/code-references", response_model=PaginatedResponse)
+async def list_code_references(
+    code_ref_repo: CodeRefRepoInj,
+    rule_id: int | None = None,
+    file_path: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """List code references, optionally filtered by rule or file."""
+    if rule_id is not None:
+        items = await code_ref_repo.list_by_rule(rule_id, limit=limit)
+    elif file_path is not None:
+        items = await code_ref_repo.list_by_file(file_path, limit=limit)
+    else:
+        items = []
+    return PaginatedResponse(items=items, total=len(items), limit=limit, offset=offset)
+
+
+@router.get("/code-references/{ref_id}", response_model=CodeReference)
+async def get_code_reference(ref_id: int, code_ref_repo: CodeRefRepoInj):
+    """Get a single code reference by ID."""
+    ref = await code_ref_repo.get(ref_id)
+    if not ref:
+        raise HTTPException(status_code=404, detail="Code reference not found")
+    return ref
+
+
+@router.post("/code-references", response_model=CodeReference, status_code=status.HTTP_201_CREATED)
+async def create_code_reference(data: CodeReferenceCreate, code_ref_repo: CodeRefRepoInj):
+    """Manually create a code reference."""
+    return await code_ref_repo.create(data)
+
+
+@router.delete("/code-references/{ref_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_code_reference(ref_id: int, code_ref_repo: CodeRefRepoInj):
+    """Delete a code reference."""
+    deleted = await code_ref_repo.delete(ref_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Code reference not found")
 
