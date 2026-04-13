@@ -21,6 +21,9 @@
 .entity-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #dbeafe; color: #1e40af; font-size: 0.8em; }
 .rule-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; font-size: 0.8em; }
 .relation-tag { display: inline-block; padding: 2px 8px; margin: 2px; border-radius: 4px; background: #fef3c7; color: #92400e; font-size: 0.8em; }
+.detail-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; margin: 4px 0; }
+.detail-card code { background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 0.85em; }
+.source-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; background: #f1f5f9; color: #475569; }
 </style>
 
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;">
@@ -54,43 +57,89 @@
                 {% if item.new_value %}
                 {% set nv = item.new_value %}
 
+                {# Source info #}
+                {% if nv._meta %}
+                <div class="candidate-section">
+                    <h4>来源</h4>
+                    <span class="source-badge">
+                        {% if nv._meta.source == 'post_task_hook' %}🔄 Post-Task Hook
+                        {% elif nv._meta.source == 'cold_start' %}🚀 Cold Start
+                        {% elif nv._meta.source == 'manual' %}✋ 手动提交
+                        {% elif nv._meta.source == 'feishu' %}📄 飞书导入
+                        {% else %}📡 {{ nv._meta.source }}{% endif %}
+                    </span>
+                    {% if nv._meta.confidence %}
+                    <span class="source-badge" style="margin-left: 4px;">
+                        置信度: {{ "%.0f"|format(nv._meta.confidence * 100) }}%
+                    </span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 {% if nv.entities %}
                 <div class="candidate-section">
-                    <h4>Entities ({{ nv.entities|length }})</h4>
+                    <h4>实体 ({{ nv.entities|length }})</h4>
                     {% for ent in nv.entities %}
-                    <span class="entity-tag" title="{{ ent.description|default('') }}">
-                        {{ ent.name|default(ent.type|default('unknown')) }}
-                        {% if ent.domain %}<small>[{{ ent.domain }}]</small>{% endif %}
-                    </span>
+                    <div class="detail-card">
+                        <strong>{{ ent.name|default('未命名') }}</strong>
+                        <code>{{ ent.type|default('?') }}</code>
+                        <code>{{ ent.domain|default('?') }}</code>
+                        {% if ent.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ ent.description }}</p>
+                        {% endif %}
+                    </div>
                     {% endfor %}
                 </div>
                 {% endif %}
 
                 {% if nv.rules %}
                 <div class="candidate-section">
-                    <h4>Rules ({{ nv.rules|length }})</h4>
+                    <h4>规则 ({{ nv.rules|length }})</h4>
                     {% for rule in nv.rules %}
                     {% set sev = rule.severity|default('info') %}
-                    <span class="rule-tag severity-{{ sev }}" title="{{ rule.description|default('') }}">
-                        {{ rule.name|default('unnamed') }}
-                        <small>{{ sev }}</small>
-                    </span>
+                    <div class="detail-card" style="border-left: 3px solid
+                        {% if sev == 'critical' %}#ef4444
+                        {% elif sev == 'warning' %}#f59e0b
+                        {% elif sev == 'error' %}#ef4444
+                        {% else %}#3b82f6{% endif %};">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <strong>{{ rule.name|default('未命名') }}</strong>
+                            <span class="badge badge-{{ sev }}" style="font-size: 0.7em;">{{ sev }}</span>
+                        </div>
+                        <code>{{ rule.domain|default('?') }}</code>
+                        {% if rule.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rule.description }}</p>
+                        {% endif %}
+                        {% if rule.conditions %}
+                        <details style="margin-top: 4px;">
+                            <summary style="cursor: pointer; color: #64748b; font-size: 0.85em;">查看条件</summary>
+                            <pre style="margin: 4px 0 0 0; font-size: 0.8em; background: #e2e8f0; padding: 6px; border-radius: 4px;">{{ rule.conditions }}</pre>
+                        </details>
+                        {% endif %}
+                    </div>
                     {% endfor %}
                 </div>
                 {% endif %}
 
                 {% if nv.relations %}
                 <div class="candidate-section">
-                    <h4>Relations ({{ nv.relations|length }})</h4>
+                    <h4>关系 ({{ nv.relations|length }})</h4>
                     {% for rel in nv.relations %}
-                    <span class="relation-tag">
-                        {{ rel.source|default('?') }} &rarr; {{ rel.relation_type|default('?') }} &rarr; {{ rel.target|default('?') }}
-                    </span>
+                    <div class="detail-card">
+                        <strong>{{ rel.source|default('?') }}</strong>
+                        <span style="color: #64748b;">&rarr;</span>
+                        <code>{{ rel.relation_type|default('?') }}</code>
+                        <span style="color: #64748b;">&rarr;</span>
+                        <strong>{{ rel.target|default('?') }}</strong>
+                        {% if rel.description %}
+                        <p style="margin: 4px 0 0 0; color: #475569; font-size: 0.9em;">{{ rel.description }}</p>
+                        {% endif %}
+                    </div>
                     {% endfor %}
                 </div>
                 {% endif %}
 
-                {% if nv.confidence is defined %}
+                {% if nv.confidence is defined and not nv._meta %}
                 <div class="candidate-section">
                     <h4>Confidence: {{ "%.0f"|format(nv.confidence * 100) }}%</h4>
                     <div class="confidence-bar">
@@ -98,6 +147,12 @@
                     </div>
                 </div>
                 {% endif %}
+
+                {# Raw JSON preview #}
+                <details style="margin-top: 8px;">
+                    <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8em;">查看原始数据</summary>
+                    <pre style="margin: 4px 0; font-size: 0.75em; background: #f1f5f9; padding: 8px; border-radius: 4px; overflow-x: auto; max-height: 200px;">{{ nv | tojson(indent=2) }}</pre>
+                </details>
 
                 {% endif %}
             </div>
