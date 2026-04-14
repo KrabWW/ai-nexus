@@ -41,6 +41,53 @@
 
 <div class="card" style="margin-top: 20px;">
     <div class="card-header">
+        <h2 class="card-title">仓库绑定</h2>
+    </div>
+
+    {% if bindings %}
+    <div style="padding: 16px;">
+        {% for binding in bindings %}
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 8px;">
+            <div>
+                <code style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 13px;">{{ binding.repo_url }}</code>
+                <span class="badge" style="background: #fef3c7; color: #92400e; margin-left: 8px;">
+                    {{ binding.branch_pattern }}
+                </span>
+            </div>
+            <form method="post" action="/console/rules/{{ rule.id }}/bindings/{{ binding.id }}/delete" style="display: inline;" onsubmit="return confirm('确认删除此绑定？');">
+                <button type="submit" class="btn btn-sm btn-danger">删除</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding: 16px; text-align: center; color: #64748b;">
+        <span class="badge" style="background: #dbeafe; color: #1e40af; font-size: 14px; padding: 8px 16px;">🌐 全局规则（适用于所有仓库）</span>
+    </div>
+    {% endif %}
+
+    <div style="padding: 16px; border-top: 1px solid #e2e8f0;">
+        <h3 style="font-size: 14px; margin-bottom: 12px;">添加绑定</h3>
+        <form method="post" action="/console/rules/{{ rule.id }}/bindings">
+            <div style="display: flex; gap: 12px; align-items: flex-end;">
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px;">仓库 URL</label>
+                    <input type="text" name="repo_url" placeholder="git@github.com:org/repo.git 或 https://github.com/org/repo" required
+                           style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                </div>
+                <div style="width: 150px;">
+                    <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px;">分支模式</label>
+                    <input type="text" name="branch_pattern" placeholder="* 或 main" value="*"
+                           style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                </div>
+                <button type="submit" class="btn btn-primary">添加绑定</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
         <h2 class="card-title">代码锚定引用 ({{ code_refs | length }})</h2>
     </div>
 

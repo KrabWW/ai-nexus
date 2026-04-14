@@ -74,3 +74,32 @@ class Rule(RuleBase):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class RuleRepoBinding(BaseModel):
+    """Model representing a rule's binding to a specific repository branch.
+
+    Attributes:
+        id: Database-generated binding ID
+        rule_id: ID of the rule this binding belongs to
+        repo_url: Normalized repository URL (e.g., "github.com/org/repo")
+        branch_pattern: Glob pattern for branch matching (e.g., "*", "main", "feature/*")
+        created_at: Timestamp when this binding was created
+    """
+
+    id: int
+    rule_id: int
+    repo_url: str
+    branch_pattern: str = "*"
+    created_at: datetime | None = None
+
+
+class RuleRepoBindingCreate(BaseModel):
+    """Model for creating a new rule-repository binding.
+
+    Used when adding a binding to a rule. The repo_url will be
+    normalized before storage to ensure SSH/HTTPS URLs match.
+    """
+
+    repo_url: str
+    branch_pattern: str = "*"

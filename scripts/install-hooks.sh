@@ -62,10 +62,14 @@ for w in cn + en:
 print('\", \"'.join(keywords[:8]))
 " 2>/dev/null)
 
+# 获取仓库信息（用于绑定感知的规则过滤）
+REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
 # 调用 AI Nexus API 校验
 RESULT=$(curl -s --max-time 5 -X POST http://localhost:8000/api/hooks/pre-commit \
   -H 'Content-Type: application/json' \
-  -d "{\"change_description\": \"$COMMIT_MSG\", \"affected_entities\": [\"$KEYWORDS\"]}" 2>/dev/null)
+  -d "{\"change_description\": \"$COMMIT_MSG\", \"affected_entities\": [\"$KEYWORDS\"], \"repo_url\": \"$REPO_URL\", \"branch\": \"$BRANCH\"}" 2>/dev/null)
 
 if [ -z "$RESULT" ]; then
     exit 0

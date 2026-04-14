@@ -13,13 +13,21 @@ from ai_nexus.api.dependencies import (
     get_extraction_service,
     get_graph_service,
     get_query_service,
+    get_rule_repo,
 )
 from ai_nexus.models.audit import AuditLog, AuditLogCreate
 from ai_nexus.models.code_reference import CodeReference, CodeReferenceCreate
 from ai_nexus.models.entity import Entity, EntityCreate, EntityUpdate
-from ai_nexus.models.rule import Rule, RuleCreate, RuleUpdate
+from ai_nexus.models.rule import (
+    Rule,
+    RuleCreate,
+    RuleRepoBinding,
+    RuleRepoBindingCreate,
+    RuleUpdate,
+)
 from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
+from ai_nexus.repos.rule_repo import RuleRepo
 from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
@@ -33,6 +41,7 @@ QuerySvc = Annotated[QueryService, Depends(get_query_service)]
 AuditRepoInj = Annotated[AuditRepo, Depends(get_audit_repo)]
 ExtractionSvc = Annotated[ExtractionService, Depends(get_extraction_service)]
 CodeRefRepoInj = Annotated[CodeReferenceRepo, Depends(get_code_reference_repo)]
+RuleRepoInj = Annotated[RuleRepo, Depends(get_rule_repo)]
 
 
 class PaginatedResponse(BaseModel):
@@ -102,6 +111,16 @@ async def create_rule(data: RuleCreate, svc: GraphSvc):
     return await svc._rules.create(data)
 
 
+@router.get("/rules/match", response_model=list[int])
+async def match_rules(
+    repo: RuleRepoInj,
+    repo_url: str = Query(..., description="Repository URL"),
+    branch: str = Query(..., description="Branch name"),
+):
+    """Query matching rules for a given repository and branch."""
+    return await repo.match_rules(repo_url, branch)
+
+
 @router.get("/rules/{rule_id}", response_model=Rule)
 async def get_rule(rule_id: int, svc: GraphSvc):
     rule = await svc._rules.get(rule_id)
@@ -150,6 +169,44 @@ async def batch_create_rules(items: list[RuleCreate], svc: GraphSvc):
             rule = await svc._rules.create(item)
             created.append(rule.id)
     return {"created": len(created), "ids": created}
+
+
+# --- Rule Bindings ---
+
+
+@router.post(
+    "/rules/{rule_id}/bindings",
+    response_model=RuleRepoBinding,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_binding(rule_id: int, data: RuleRepoBindingCreate, repo: RuleRepoInj):
+    """Add a repository binding to a rule."""
+    rule = await repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return await repo.add_binding(rule_id, data)
+
+
+@router.get("/rules/{rule_id}/bindings", response_model=list[RuleRepoBinding])
+async def list_bindings(rule_id: int, repo: RuleRepoInj):
+    """List all repository bindings for a rule."""
+    rule = await repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return await repo.list_bindings(rule_id)
+
+
+@router.delete("/rules/{rule_id}/bindings/{binding_id}")
+async def delete_binding(rule_id: int, binding_id: int, repo: RuleRepoInj):
+    """Delete a repository binding."""
+    rule = await repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    deleted = await repo.remove_binding(binding_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Binding not found")
+    return {"deleted": True}
+
 
 class SearchBody(BaseModel):
     query: str
@@ -262,6 +319,7 @@ async def pre_plan_hook(body: PrePlanRequest, graph_svc: GraphSvc):
 async def pre_commit_hook(
     body: PreCommitRequest,
     query_svc: QuerySvc,
+    rule_repo: RuleRepoInj,
     code_ref_repo: CodeRefRepoInj,
 ):
     from ai_nexus.services.ast_analyzer import extract_keywords_from_path, keywords_overlap
@@ -271,24 +329,41 @@ async def pre_commit_hook(
     errors = []
     warnings = []
     infos = []
-    matched_rules: list[Any] = []
+
+    # Step 1: Collect all candidate rules from keyword search (deduplicated by ID)
+    all_candidate_rules: dict[int, Any] = {}
     for kw in keywords:
         rules = await query_svc.query_rules(kw, limit=5)
         for rule in rules:
-            if rule.status == "approved":
-                violation = {
-                    "rule": rule.name,
-                    "rule_id": rule.id,
-                    "description": rule.description,
-                    "severity": rule.severity or "info",
-                }
-                if rule.severity == "critical":
-                    errors.append(violation)
-                elif rule.severity == "warning":
-                    warnings.append(violation)
-                else:
-                    infos.append(violation)
-                matched_rules.append(rule)
+            if rule.status == "approved" and rule.id not in all_candidate_rules:
+                all_candidate_rules[rule.id] = rule
+
+    # Step 2: Filter by binding if repo_url and branch provided
+    if body.repo_url and body.branch:
+        # Get matching rule IDs (global rules + matching bound rules)
+        bound_rule_ids = await rule_repo.match_rules(body.repo_url, body.branch)
+        # Filter: only keep rules whose IDs are in bound_rule_ids
+        filtered_rules = [r for r in all_candidate_rules.values() if r.id in bound_rule_ids]
+    else:
+        # Backward compatible: no repo_url/branch = all rules
+        filtered_rules = list(all_candidate_rules.values())
+
+    # Step 3: Process filtered rules into violations
+    matched_rules: list[Any] = []
+    for rule in filtered_rules:
+        violation = {
+            "rule": rule.name,
+            "rule_id": rule.id,
+            "description": rule.description,
+            "severity": rule.severity or "info",
+        }
+        if rule.severity == "critical":
+            errors.append(violation)
+        elif rule.severity == "warning":
+            warnings.append(violation)
+        else:
+            infos.append(violation)
+        matched_rules.append(rule)
 
     # Code reference capture (only when diff + commit_sha provided)
     code_refs_created = 0

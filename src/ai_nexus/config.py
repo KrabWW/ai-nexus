@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Service Configuration
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8015
 
     # Database Configuration
     sqlite_path: str = "data/ai_nexus.db"

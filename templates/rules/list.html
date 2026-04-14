@@ -55,6 +55,7 @@
                     <th>严重性</th>
                     <th>状态</th>
                     <th>置信度</th>
+                    <th>仓库绑定</th>
                     <th>来源</th>
                     <th>操作</th>
                 </tr>
@@ -85,6 +86,13 @@
                         <span class="badge" style="background-color: #e0f2fe; color: #0369a1;">{{ (rule.confidence * 100)|int }}%</span>
                         {% else %}
                         -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if rule.binding_count > 0 %}
+                        <span class="badge" style="background-color: #fef3c7; color: #92400e;">🔗 {{ rule.binding_count }} 个仓库</span>
+                        {% else %}
+                        <span class="badge" style="background-color: #dbeafe; color: #1e40af;">🌐 全局</span>
                         {% endif %}
                     </td>
                     <td>{{ rule.source }}</td>

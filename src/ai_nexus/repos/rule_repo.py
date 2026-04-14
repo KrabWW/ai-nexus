@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import re
 from typing import Any
 
 from ai_nexus.db.sqlite import Database
-from ai_nexus.models.rule import Rule, RuleCreate, RuleUpdate
+from ai_nexus.models.rule import (
+    Rule,
+    RuleCreate,
+    RuleRepoBinding,
+    RuleRepoBindingCreate,
+    RuleUpdate,
+)
 
 
 def _tokenize_query(query: str) -> list[str]:
@@ -77,6 +85,32 @@ _SELECT = (
     "SELECT id, name, description, domain, severity, conditions, related_entity_ids, "
     "status, source, confidence, created_at, updated_at FROM rules"
 )
+
+
+def normalize_repo_url(url: str) -> str:
+    """Normalize git remote URLs for consistent matching.
+
+    Converts various git URL formats to a canonical "host/org/repo" format:
+    - git@github.com:org/repo.git → github.com/org/repo
+    - https://github.com/org/repo.git → github.com/org/repo
+    - https://gitlab.com/org/repo → gitlab.com/org/repo
+
+    Args:
+        url: Raw git remote URL
+
+    Returns:
+        Normalized URL in "host/org/repo" format
+    """
+    url = url.strip()
+    # SSH format: git@host:org/repo.git
+    m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", url)
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    # HTTPS format: https://host/org/repo.git
+    m = re.match(r"https?://([^/]+)/(.+?)(?:\.git)?$", url)
+    if m:
+        return f"{m.group(1)}/{m.group(2)}"
+    return url.rstrip("/")
 
 
 class RuleRepo:
@@ -208,3 +242,119 @@ class RuleRepo:
             f"{_SELECT} WHERE id IN ({placeholders})", tuple(ids)
         )
         return [_row_to_rule(r) for r in rows]
+
+    async def list_bindings(self, rule_id: int) -> list[RuleRepoBinding]:
+        """List all repository bindings for a specific rule.
+
+        Args:
+            rule_id: ID of the rule to list bindings for
+
+        Returns:
+            List of RuleRepoBinding objects for this rule
+        """
+        rows = await self._db.fetchall(
+            "SELECT id, rule_id, repo_url, branch_pattern, created_at "
+            "FROM rule_repo_bindings WHERE rule_id = ? "
+            "ORDER BY created_at DESC",
+            (rule_id,),
+        )
+        return [
+            RuleRepoBinding(
+                id=row[0],
+                rule_id=row[1],
+                repo_url=row[2],
+                branch_pattern=row[3],
+                created_at=row[4],
+            )
+            for row in rows
+        ]
+
+    async def add_binding(
+        self, rule_id: int, data: RuleRepoBindingCreate
+    ) -> RuleRepoBinding:
+        """Add a repository binding to a rule.
+
+        Args:
+            rule_id: ID of the rule to bind
+            data: Binding data (repo_url, branch_pattern)
+
+        Returns:
+            Created RuleRepoBinding object
+
+        Raises:
+            sqlite3.IntegrityError: If binding already exists (UNIQUE constraint)
+        """
+        normalized_url = normalize_repo_url(data.repo_url)
+        cursor = await self._db.execute(
+            "INSERT INTO rule_repo_bindings (rule_id, repo_url, branch_pattern) "
+            "VALUES (?, ?, ?)",
+            (rule_id, normalized_url, data.branch_pattern),
+        )
+        row = await self._db.fetchone(
+            "SELECT id, rule_id, repo_url, branch_pattern, created_at "
+            "FROM rule_repo_bindings WHERE id = ?",
+            (cursor.lastrowid,),
+        )
+        return RuleRepoBinding(
+            id=row[0],
+            rule_id=row[1],
+            repo_url=row[2],
+            branch_pattern=row[3],
+            created_at=row[4],
+        )
+
+    async def remove_binding(self, binding_id: int) -> bool:
+        """Remove a repository binding.
+
+        Args:
+            binding_id: ID of the binding to remove
+
+        Returns:
+            True if binding was deleted, False if not found
+        """
+        cursor = await self._db.execute(
+            "DELETE FROM rule_repo_bindings WHERE id = ?", (binding_id,)
+        )
+        return cursor.rowcount > 0
+
+    async def match_rules(self, repo_url: str, branch: str) -> list[int]:
+        """Find rule IDs that match a given repository and branch.
+
+        Returns:
+            - All rule IDs with NO bindings (global rules)
+            - Rule IDs with bindings matching repo_url + branch_pattern
+
+        Matching logic:
+        - repo_url is normalized and matched exactly against stored normalized URLs
+        - branch is matched against branch_pattern using fnmatch glob patterns
+
+        Args:
+            repo_url: Git remote URL (will be normalized)
+            branch: Branch name (e.g., "main", "feature/login")
+
+        Returns:
+            List of rule IDs that should apply to this repo/branch
+        """
+        normalized_url = normalize_repo_url(repo_url)
+
+        # Get rules with no bindings (global rules)
+        global_rules = await self._db.fetchall(
+            "SELECT id FROM rules WHERE id NOT IN (SELECT DISTINCT rule_id FROM rule_repo_bindings)"
+        )
+        global_rule_ids = [row[0] for row in global_rules]
+
+        # Get rules with bindings matching this repo
+        bound_rules = await self._db.fetchall(
+            "SELECT rule_id, branch_pattern FROM rule_repo_bindings WHERE repo_url = ?",
+            (normalized_url,),
+        )
+
+        # Filter by branch pattern using fnmatch
+        matching_rule_ids = [
+            row[0]
+            for row in bound_rules
+            if fnmatch.fnmatch(branch, row[1])
+        ]
+
+        # Combine global rules + matching bound rules (deduplicate)
+        return list(set(global_rule_ids + matching_rule_ids))

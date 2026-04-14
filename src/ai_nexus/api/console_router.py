@@ -287,9 +287,18 @@ async def list_rules(
     domains = sorted(set(r.domain for r in all_rules))
     severities = sorted(set(r.severity for r in all_rules))
 
+    # 获取每个规则的绑定数量
+    rules_with_counts = []
+    for rule in rules:
+        bindings = await rule_repo.list_bindings(rule.id)
+        rule_with_count = rule.model_dump()
+        rule_with_count["binding_count"] = len(bindings)
+        from ai_nexus.models.rule import Rule
+        rules_with_counts.append(Rule(**rule_with_count))
+
     return templates.TemplateResponse(request, "rules/list.html",{
             "request": request,
-            "rules": rules,
+            "rules": rules_with_counts,
             "domains": domains,
             "severities": severities,
             "selected_domain": domain,
@@ -357,10 +366,17 @@ async def rule_detail(
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     code_refs = await code_ref_repo.list_by_rule(rule_id)
+    bindings = await rule_repo.list_bindings(rule_id)
     return templates.TemplateResponse(
         request,
         "rules/detail.html",
-        {"request": request, "rule": rule, "code_refs": code_refs, "active_page": "rules"},
+        {
+            "request": request,
+            "rule": rule,
+            "code_refs": code_refs,
+            "bindings": bindings,
+            "active_page": "rules",
+        },
     )
 
 
@@ -423,6 +439,48 @@ async def delete_rule(
     """删除规则。"""
     await rule_repo.delete(rule_id)
     return RedirectResponse(url="/console/rules", status_code=303)
+
+
+@router.post("/rules/{rule_id}/bindings")
+async def add_binding(
+    rule_id: int,
+    rule_repo: RuleRepoInj,
+    repo_url: str = Form(...),
+    branch_pattern: str = Form(default="*"),
+):
+    """添加规则仓库绑定。"""
+    from ai_nexus.models.rule import RuleRepoBindingCreate
+
+    # 验证规则存在
+    rule = await rule_repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    # 添加绑定
+    data = RuleRepoBindingCreate(repo_url=repo_url, branch_pattern=branch_pattern)
+    await rule_repo.add_binding(rule_id, data)
+
+    return RedirectResponse(url=f"/console/rules/{rule_id}/detail", status_code=303)
+
+
+@router.post("/rules/{rule_id}/bindings/{binding_id}/delete")
+async def delete_binding(
+    rule_id: int,
+    binding_id: int,
+    rule_repo: RuleRepoInj,
+):
+    """删除规则仓库绑定。"""
+    # 验证规则存在
+    rule = await rule_repo.get(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    # 删除绑定
+    deleted = await rule_repo.remove_binding(binding_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Binding not found")
+
+    return RedirectResponse(url=f"/console/rules/{rule_id}/detail", status_code=303)
 
 
 # --- Relation Management ---
