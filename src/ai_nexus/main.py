@@ -88,9 +88,10 @@ def create_app() -> FastAPI:
         lifespan=db_lifespan,
     )
 
+    origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )

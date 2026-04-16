@@ -184,15 +184,6 @@ class LintService:
             if negative in text_1 and positive in text_2:
                 return f"包含相反关键词: '{negative}' vs '{positive}'"
 
-        # Check for contradictory severity on similar topics
-        # (simple heuristic: similar names with different severity extremes)
-        words_1 = set(name_1.lower().split())
-        words_2 = set(name_2.lower().split())
-        overlap = words_1 & words_2
-        if overlap and len(overlap) >= 2:
-            # Rules share key terms - could be worth flagging
-            pass
-
         return None
 
     async def detect_dead_rules(self, days_threshold: int = 30) -> list[DeadRule]:

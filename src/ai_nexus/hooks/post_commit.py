@@ -25,6 +25,17 @@ except (ValueError, TypeError):
     DIFF_LIMIT = 8000
 
 
+async def _git_output(*args: str) -> str | None:
+    """Run a git command and return stdout, or None on failure."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip() if proc.returncode == 0 and stdout.strip() else None
+
+
 async def main() -> None:
     """Main hook entry point.
 
@@ -40,11 +51,18 @@ async def main() -> None:
         hook_input = json.loads(hook_input_str)
         tool_input = hook_input.get("tool_input", {})
 
-        # Get commit information
-        # In a real git hook, we'd get this from git environment
-        # For Claude Code, we extract from the input
-        commit_message = tool_input.get("commit_message", "")
-        diff = tool_input.get("diff", "")
+        # Get commit information: prefer git CLI, fall back to hook input
+        commit_message = tool_input.get("commit_message", "") or ""
+        diff = tool_input.get("diff", "") or ""
+
+        # Try to get actual commit data from git
+        if not commit_message:
+            commit_message = await _git_output("log", "-1", "--pretty=%B") or ""
+        if not diff:
+            diff = await _git_output("diff", "HEAD~1", "--stat") or ""
+            full_diff = await _git_output("diff", "HEAD~1")
+            if full_diff:
+                diff = full_diff[:DIFF_LIMIT]
 
         if not commit_message and not diff:
             return

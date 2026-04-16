@@ -63,7 +63,11 @@ class AuditRepo:
                 if isinstance(items, list):
                     for idx, item in enumerate(items):
                         if isinstance(item, dict) and "temp_id" not in item:
-                            singular = {"entities": "entity", "rules": "rule", "relations": "relation"}.get(key, key)
+                            singular = {
+                                "entities": "entity",
+                                "rules": "rule",
+                                "relations": "relation",
+                            }.get(key, key)
                             item["temp_id"] = f"{log_id}_{singular}_{idx}"
                             updated = True
             if updated:

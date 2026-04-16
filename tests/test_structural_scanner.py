@@ -196,7 +196,7 @@ class TestMCPTools:
             assert "results" in result
             await db.disconnect()
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_create_code_reference_tool_no_repo(self):
         """Test create_code_reference without repo init returns error."""
@@ -216,4 +216,4 @@ class TestMCPTools:
             result = json.loads(result_str)
             assert "error" in result
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())

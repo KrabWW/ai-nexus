@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Refund Configuration (部分退款上限比例)
     refund_max_ratio: float = 1.0
 
+    # CORS Configuration
+    allowed_origins: str = "http://localhost:3000,http://localhost:8000"
+
     # Feishu/Lark Integration
     feishu_app_id: str = ""
     feishu_app_secret: str = ""

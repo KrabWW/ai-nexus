@@ -189,5 +189,7 @@ class Database:
         if not self._conn:
             raise RuntimeError("Database not connected. Call connect() first.")
         cursor = await self._conn.executemany(sql, params)
-        await self._conn.commit()
+        # Only auto-commit if not in a transaction
+        if self._txn.get() is None:
+            await self._conn.commit()
         return cursor

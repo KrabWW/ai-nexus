@@ -113,6 +113,12 @@ def normalize_repo_url(url: str) -> str:
     return url.rstrip("/")
 
 
+_RULE_UPDATEABLE_COLUMNS = frozenset({
+    "name", "description", "domain", "severity", "conditions",
+    "related_entity_ids", "status", "source", "confidence",
+})
+
+
 class RuleRepo:
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -143,6 +149,9 @@ class RuleRepo:
         fields = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
         if not fields:
             return await self.get(rule_id)
+        invalid = set(fields.keys()) - _RULE_UPDATEABLE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid columns: {invalid}")
         for json_field in ("conditions", "related_entity_ids"):
             if json_field in fields and fields[json_field] is not None:
                 fields[json_field] = json.dumps(fields[json_field])

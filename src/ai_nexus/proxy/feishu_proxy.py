@@ -8,11 +8,14 @@
 
 import hashlib
 import logging
+import time
 from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+_TOKEN_TTL_SECONDS = 7200  # Feishu tenant_access_token expires in 2 hours
 
 
 class FeishuProxy:
@@ -41,6 +44,7 @@ class FeishuProxy:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._token: str | None = None
+        self._token_expires_at: float = 0.0
 
     async def get_tenant_access_token(self) -> str:
         """获取租户访问令牌。
@@ -54,7 +58,7 @@ class FeishuProxy:
         Raises:
             httpx.HTTPError: API 请求失败时
         """
-        if self._token:
+        if self._token and time.monotonic() < self._token_expires_at:
             return self._token
 
         url = f"{self._base_url}/auth/v3/tenant_access_token/internal"
@@ -73,6 +77,7 @@ class FeishuProxy:
                 raise httpx.HTTPError(f"Feishu API error: {error_msg}")
 
             self._token = data.get("tenant_access_token")
+            self._token_expires_at = time.monotonic() + _TOKEN_TTL_SECONDS
             if not self._token:
                 raise httpx.HTTPError("No tenant_access_token in response")
 

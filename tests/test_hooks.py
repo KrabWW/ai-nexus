@@ -148,7 +148,7 @@ async def test_pre_commit_violations_detected(mock_hook_input, monkeypatch, caps
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "violations": [
+        "errors": [
             {
                 "rule_id": "1",
                 "rule": "禁止直接删除订单",
@@ -156,6 +156,8 @@ async def test_pre_commit_violations_detected(mock_hook_input, monkeypatch, caps
                 "severity": "critical",
             }
         ],
+        "warnings": [],
+        "infos": [],
         "passed": False,
     }
 
@@ -197,7 +199,9 @@ async def test_pre_commit_no_violations_silent_pass(mock_hook_input, monkeypatch
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "violations": [],
+        "errors": [],
+        "warnings": [],
+        "infos": [],
         "passed": True,
     }
 

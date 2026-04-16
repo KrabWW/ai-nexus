@@ -25,6 +25,11 @@ def _row_to_entity(row: tuple[Any, ...]) -> Entity:
     )
 
 
+_ENTITY_UPDATEABLE_COLUMNS = frozenset({
+    "name", "type", "description", "attributes", "domain", "status", "source",
+})
+
+
 class EntityRepo:
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -70,6 +75,9 @@ class EntityRepo:
         fields = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
         if not fields:
             return await self.get(entity_id)
+        invalid = set(fields.keys()) - _ENTITY_UPDATEABLE_COLUMNS
+        if invalid:
+            raise ValueError(f"Invalid columns: {invalid}")
         if "name" in fields and fields["name"] is not None:
             fields["name"] = fields["name"].strip()
         if "attributes" in fields and fields["attributes"] is not None:

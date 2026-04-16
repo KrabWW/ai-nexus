@@ -6,9 +6,16 @@ from ai_nexus.main import app
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as c:
-        yield c
+def client(tmp_path):
+    import ai_nexus.main as main_module
+    db_path = str(tmp_path / "test.db")
+    original = main_module.settings.sqlite_path
+    main_module.settings.sqlite_path = db_path
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        main_module.settings.sqlite_path = original
 
 
 def test_create_entity(client):
