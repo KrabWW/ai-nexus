@@ -19,6 +19,10 @@ import httpx
 # Configuration from environment
 AI_NEXUS_URL = os.environ.get("AI_NEXUS_URL", "http://localhost:8000")
 TIMEOUT = float(os.environ.get("AI_NEXUS_HOOK_TIMEOUT", "5.0"))
+try:
+    DIFF_LIMIT = int(os.environ.get("AI_NEXUS_POST_COMMIT_DIFF_LIMIT", "8000"))
+except (ValueError, TypeError):
+    DIFF_LIMIT = 8000
 
 
 async def main() -> None:
@@ -49,7 +53,7 @@ async def main() -> None:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             # Submit for knowledge extraction
             payload = {
-                "text": f"Commit: {commit_message}\n\nDiff:\n{diff[:2000]}",
+                "text": f"Commit: {commit_message}\n\nDiff:\n{diff[:DIFF_LIMIT]}",
                 "source": "git-post-commit-hook",
                 "confidence": 0.6,  # Default confidence for git hook extraction
             }

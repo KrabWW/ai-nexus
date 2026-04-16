@@ -2,12 +2,12 @@
 
 from fastapi import Request
 
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
-from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
 

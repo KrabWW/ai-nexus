@@ -147,8 +147,10 @@ async def validate_against_rules(
 
 @mcp.tool()
 async def get_session_ctx(query: str, limit: int = 10) -> str:
-    """获取会话上下文（代理 mem0 语义搜索）。
-    根据查询关键词在历史记忆中搜索相关上下文。
+    """获取会话上下文。
+
+    代理 mem0 语义搜索。通过 QueryService.query_rules 统一搜索路径
+    （图谱 → mem0 → SQLite 降级）获取会话上下文。
     """
     svc = _get_query_service()
     # QueryService 内部已集成 Mem0Proxy

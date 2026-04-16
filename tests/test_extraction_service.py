@@ -1,18 +1,24 @@
-"""Tests for ExtractionService.
+"""Tests for ExtractionService (extraction/ version).
 
 Tests cover:
-- Text with business knowledge → structured output
-- Text without business knowledge → empty result
+- Text with business knowledge -> structured output
+- Text without business knowledge -> empty result
 - Domain hint parameter affects extraction
-- Malformed API response → graceful fallback
+- Malformed API response -> graceful fallback
+- Prompt template file exists
+- cold_start flow
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ai_nexus.extraction.extraction_service import EXTRACTION_PROMPT, ExtractionService
-from ai_nexus.models.extraction import (
-    ExtractionResult,
+import pytest
+
+from ai_nexus.extraction.extraction_service import (
+    ExtractionService,
+    _parse_response,
 )
+from ai_nexus.models.extraction import ExtractionResult
 
 
 class TestExtractionService:
@@ -22,16 +28,62 @@ class TestExtractionService:
         """Test service initialization with API key."""
         service = ExtractionService(api_key="test-key")
         assert service._model == "claude-sonnet-4-20250514"
+        assert service._api_key == "test-key"
 
     def test_init_with_custom_model(self) -> None:
         """Test service initialization with custom model."""
         service = ExtractionService(api_key="test-key", model="claude-opus-4-20250514")
         assert service._model == "claude-opus-4-20250514"
 
+    def test_init_with_repos(self) -> None:
+        """Test service stores repo references."""
+        svc = ExtractionService(
+            entity_repo="e",
+            relation_repo="r",
+            rule_repo="ru",
+            api_key="key",
+        )
+        assert svc._entity_repo == "e"
+        assert svc._relation_repo == "r"
+        assert svc._rule_repo == "ru"
+
+    def test_init_default_model_and_tokens(self) -> None:
+        """Test default model and max_tokens."""
+        svc = ExtractionService(api_key="key")
+        assert svc._model == "claude-sonnet-4-20250514"
+        assert svc._max_tokens == 4096
+
+    def test_init_custom_model_and_tokens(self) -> None:
+        """Test custom model and max_tokens."""
+        svc = ExtractionService(api_key="key", model="claude-opus-4-20250514", max_tokens=8192)
+        assert svc._model == "claude-opus-4-20250514"
+        assert svc._max_tokens == 8192
+
+    @pytest.mark.asyncio
+    async def test_extract_empty_text_returns_empty(self) -> None:
+        """Test extraction with empty input text."""
+        service = ExtractionService(api_key="test-key")
+
+        result = await service.extract("")
+        assert result.is_empty()
+
+        result = await service.extract("   \n\t  ")
+        assert result.is_empty()
+
+        result = await service.extract("  ")
+        assert result.is_empty()
+
+    @pytest.mark.asyncio
+    async def test_extract_missing_api_key_returns_empty(self) -> None:
+        """Test extraction without API key returns empty result."""
+        service = ExtractionService()
+        result = await service.extract("Some text")
+        assert result.is_empty()
+
+    @pytest.mark.asyncio
     @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
     async def test_extract_with_business_knowledge(self, mock_anthropic: MagicMock) -> None:
         """Test extraction from text containing business knowledge."""
-        # Mock Claude API response
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text='''```json
 {
@@ -79,10 +131,10 @@ class TestExtractionService:
         assert len(result.rules) == 1
         assert result.rules[0].severity == "error"
 
+    @pytest.mark.asyncio
     @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
     async def test_extract_without_business_knowledge(self, mock_anthropic: MagicMock) -> None:
         """Test extraction from text with only technical details returns empty result."""
-        # Mock Claude API response with empty arrays
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text='''```json
 {"entities": [], "relations": [], "rules": []}
@@ -97,6 +149,7 @@ class TestExtractionService:
         assert result.is_empty()
         assert result.count_total() == 0
 
+    @pytest.mark.asyncio
     @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
     async def test_extract_with_domain_hint(self, mock_anthropic: MagicMock) -> None:
         """Test that domain_hint is included in the prompt and affects extraction."""
@@ -132,10 +185,10 @@ class TestExtractionService:
         assert len(result.entities) == 1
         assert result.entities[0].domain == "医疗排班"
 
+    @pytest.mark.asyncio
     @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
     async def test_extract_with_malformed_json(self, mock_anthropic: MagicMock) -> None:
         """Test graceful fallback when API returns malformed JSON."""
-        # Mock Claude API response with invalid JSON
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="This is not valid JSON")]
         mock_client = MagicMock()
@@ -145,48 +198,25 @@ class TestExtractionService:
         service = ExtractionService(api_key="test-key")
         result = await service.extract("Some text")
 
-        # Should return empty result instead of raising
         assert isinstance(result, ExtractionResult)
         assert result.is_empty()
 
+    @pytest.mark.asyncio
     @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
     async def test_extract_with_api_error(self, mock_anthropic: MagicMock) -> None:
         """Test graceful fallback when API call fails."""
         mock_client = MagicMock()
-        # Mock an exception directly without using anthropic.APIError
         mock_client.messages.create.side_effect = Exception("API Error")
         mock_anthropic.return_value = mock_client
 
         service = ExtractionService(api_key="test-key")
         result = await service.extract("Some text")
 
-        # Should return empty result instead of raising
         assert isinstance(result, ExtractionResult)
         assert result.is_empty()
 
-    @patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic")
-    async def test_extract_with_empty_text(self, mock_anthropic: MagicMock) -> None:
-        """Test extraction with empty input text."""
-        service = ExtractionService(api_key="test-key")
-
-        # Empty string
-        result = await service.extract("")
-        assert result.is_empty()
-
-        # Whitespace only
-        result = await service.extract("   \n\t  ")
-        assert result.is_empty()
-
-        # None-like
-        result = await service.extract("  ")
-        assert result.is_empty()
-
-        # Verify API was not called
-        mock_anthropic.return_value.messages.create.assert_not_called()
-
     def test_parse_response_with_json_code_block(self) -> None:
         """Test parsing JSON wrapped in markdown code blocks."""
-        service = ExtractionService(api_key="test-key")
         response_text = '''```json
 {
   "entities": [
@@ -202,53 +232,30 @@ class TestExtractionService:
   "rules": []
 }
 ```'''
-        result = service._parse_response(response_text, "test")
+        result = _parse_response(response_text, "test")
 
         assert len(result.entities) == 1
         assert result.entities[0].name == "测试实体"
 
     def test_parse_response_with_plain_json(self) -> None:
         """Test parsing plain JSON without markdown wrapping."""
-        service = ExtractionService(api_key="test-key")
         response_text = '{"entities": [], "relations": [], "rules": []}'
-        result = service._parse_response(response_text)
+        result = _parse_response(response_text)
 
         assert result.is_empty()
 
-    def test_extract_sync_method(self) -> None:
-        """Test synchronous extract method."""
-        with patch("ai_nexus.extraction.extraction_service.anthropic.Anthropic") as mock_anthropic:
-            mock_response = MagicMock()
-            mock_response.content = [MagicMock(text='''```json
-{
-  "entities": [
-    {
-      "name": "同步测试",
-      "type": "概念",
-      "domain": "test",
-      "confidence": 0.7,
-      "description": "测试同步方法"
-    }
-  ],
-  "relations": [],
-  "rules": []
-}
-```''')]
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.return_value = mock_client
+    def test_prompt_template_file_exists(self) -> None:
+        """Test that the prompt template file exists and has required content."""
+        prompts_dir = Path(__file__).resolve().parent.parent / "src" / "ai_nexus" / "prompts"
+        prompt_file = prompts_dir / "extraction_prompt.md"
+        assert prompt_file.exists(), f"Prompt file not found: {prompt_file}"
+        content = prompt_file.read_text(encoding="utf-8")
+        assert "实体" in content or "Entities" in content
+        assert "关系" in content or "Relations" in content
+        assert "规则" in content or "Rules" in content
 
-            service = ExtractionService(api_key="test-key")
-            result = service.extract_sync("测试文本")
-
-            assert len(result.entities) == 1
-            assert result.entities[0].name == "同步测试"
-
-    def test_prompt_template_exists(self) -> None:
-        """Test that EXTRACTION_PROMPT template is defined."""
-        assert EXTRACTION_PROMPT
-        assert "{text}" in EXTRACTION_PROMPT
-        assert "{domain_hint_section}" in EXTRACTION_PROMPT
-        assert "实体" in EXTRACTION_PROMPT
-        assert "关系" in EXTRACTION_PROMPT
-        assert "规则" in EXTRACTION_PROMPT
+    def test_cold_start_prompt_template_file_exists(self) -> None:
+        """Test that the cold_start prompt template file exists."""
+        prompts_dir = Path(__file__).resolve().parent.parent / "src" / "ai_nexus" / "prompts"
+        prompt_file = prompts_dir / "cold_start_prompt.md"
+        assert prompt_file.exists(), f"Cold start prompt file not found: {prompt_file}"

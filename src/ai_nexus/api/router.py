@@ -15,6 +15,7 @@ from ai_nexus.api.dependencies import (
     get_query_service,
     get_rule_repo,
 )
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.models.audit import AuditLog, AuditLogCreate
 from ai_nexus.models.code_reference import CodeReference, CodeReferenceCreate
 from ai_nexus.models.entity import Entity, EntityCreate, EntityUpdate
@@ -28,7 +29,6 @@ from ai_nexus.models.rule import (
 from ai_nexus.repos.audit_repo import AuditRepo
 from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.rule_repo import RuleRepo
-from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
 

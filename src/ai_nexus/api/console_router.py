@@ -21,6 +21,7 @@ from ai_nexus.api.dependencies import (
     get_relation_repo,
     get_rule_repo,
 )
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.models.entity import EntityCreate, EntityUpdate
 from ai_nexus.models.relation import RelationCreate
 from ai_nexus.models.rule import RuleCreate, RuleUpdate
@@ -29,7 +30,6 @@ from ai_nexus.repos.code_reference_repo import CodeReferenceRepo
 from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
-from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.graph_service import GraphService
 
 router = APIRouter(prefix="/console", tags=["console"])

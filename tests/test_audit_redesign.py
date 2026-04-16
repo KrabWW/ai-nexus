@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ai_nexus.db.sqlite import Database
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.models.audit import ApproveRequest, AuditLogCreate, ItemAction
 from ai_nexus.models.extraction import (
     ExtractedEntity,
@@ -22,7 +23,6 @@ from ai_nexus.models.extraction import (
     ExtractionResult,
 )
 from ai_nexus.repos.audit_repo import AuditRepo
-from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.ingest_service import IngestService
 
 # ── Fixtures ──────────────────────────────────────────────────────────

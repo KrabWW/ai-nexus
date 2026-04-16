@@ -12,9 +12,11 @@ if [ ! -d "$HOOKS_DIR" ]; then
     exit 1
 fi
 
+AI_NEXUS_URL="${AI_NEXUS_URL:-http://localhost:8000}"
+
 # 检查 AI Nexus 服务是否可用
-if ! curl -s --max-time 3 http://localhost:8000/health > /dev/null 2>&1; then
-    echo "警告：AI Nexus 服务未运行 (http://localhost:8000)"
+if ! curl -s --max-time 3 "${AI_NEXUS_URL}/health" > /dev/null 2>&1; then
+    echo "警告：AI Nexus 服务未运行 (${AI_NEXUS_URL})"
     echo "      hooks 会在服务不可用时静默跳过"
 fi
 
@@ -67,7 +69,8 @@ REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
 # 调用 AI Nexus API 校验
-RESULT=$(curl -s --max-time 5 -X POST http://localhost:8000/api/hooks/pre-commit \
+AI_NEXUS_URL="${AI_NEXUS_URL:-http://localhost:8000}"
+RESULT=$(curl -s --max-time 5 -X POST "${AI_NEXUS_URL}/api/hooks/pre-commit" \
   -H 'Content-Type: application/json' \
   -d "{\"change_description\": \"$COMMIT_MSG\", \"affected_entities\": [\"$KEYWORDS\"], \"repo_url\": \"$REPO_URL\", \"branch\": \"$BRANCH\"}" 2>/dev/null)
 
@@ -115,7 +118,9 @@ if [ -z "$COMMIT_MSG" ]; then
     exit 0
 fi
 
-RESULT=$(curl -s --max-time 15 -X POST http://localhost:8000/api/hooks/post-task \
+AI_NEXUS_URL="${AI_NEXUS_URL:-http://localhost:8000}"
+
+RESULT=$(curl -s --max-time 15 -X POST "${AI_NEXUS_URL}/api/hooks/post-task" \
   -H 'Content-Type: application/json' \
   -d "{
     \"task_description\": \"$COMMIT_MSG\",
@@ -145,7 +150,7 @@ except:
 
 if [ -n "$SUBMITTED" ]; then
     echo "🧠 AI Nexus 自动抽取: $SUBMITTED"
-    echo "   请在 http://localhost:8000/console/audit 审核"
+    echo "   请在 ${AI_NEXUS_URL}/console/audit 审核"
 fi
 
 exit 0

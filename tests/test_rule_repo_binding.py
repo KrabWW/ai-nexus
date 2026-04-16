@@ -18,11 +18,9 @@ from ai_nexus.db.sqlite import Database
 from ai_nexus.models.rule import (
     Rule,
     RuleCreate,
-    RuleRepoBinding,
     RuleRepoBindingCreate,
 )
 from ai_nexus.repos.rule_repo import RuleRepo, normalize_repo_url
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -385,10 +383,10 @@ class TestPreCommitHookFilter:
         from fastapi import FastAPI
 
         from ai_nexus.api.router import router
+        from ai_nexus.extraction.extraction_service import ExtractionService
         from ai_nexus.repos.audit_repo import AuditRepo
-        from ai_nexus.services.extraction_service import ExtractionService
-        from ai_nexus.services.query_service import QueryService
         from ai_nexus.services.graph_service import GraphService
+        from ai_nexus.services.query_service import QueryService
 
         app = FastAPI()
         app.include_router(router)
@@ -520,8 +518,8 @@ class TestBindingAPIEndpoints:
         from fastapi import FastAPI
 
         from ai_nexus.api.router import router
+        from ai_nexus.extraction.extraction_service import ExtractionService
         from ai_nexus.repos.audit_repo import AuditRepo
-        from ai_nexus.services.extraction_service import ExtractionService
         from ai_nexus.services.graph_service import GraphService
 
         app = FastAPI()

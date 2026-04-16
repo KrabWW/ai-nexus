@@ -1,4 +1,4 @@
-"""Tests for services/extraction_service.py.
+"""Tests for extraction/extraction_service.py.
 
 Covers: successful extraction, empty input, API failure, missing API key,
 malformed JSON, and cold_start flow.
@@ -9,11 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.models.extraction import ExtractionResult
-from ai_nexus.services.extraction_service import ExtractionService
 
 # Module path for patching
-_MOD = "ai_nexus.services.extraction_service"
+_MOD = "ai_nexus.extraction.extraction_service"
 
 
 @pytest.fixture

@@ -38,7 +38,14 @@ async def main() -> None:
 
         # Extract task context from the tool input
         # For Write/Edit tools, the content or file_path provides context
-        task_description = json.dumps(tool_input, ensure_ascii=False)
+        file_path = tool_input.get("file_path", "")
+        content = tool_input.get("content", tool_input.get("new_string", ""))
+        if file_path and content:
+            task_description = f"Editing {file_path}: {content[:200]}"
+        elif file_path:
+            task_description = f"Editing {file_path}"
+        else:
+            task_description = json.dumps(tool_input, ensure_ascii=False)
 
         # Call the pre-plan API
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:

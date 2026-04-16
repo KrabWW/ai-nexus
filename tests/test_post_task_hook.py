@@ -30,8 +30,8 @@ def _make_app(_mock_db: MagicMock) -> TestClient:
     from fastapi import FastAPI
 
     from ai_nexus.api.router import router
+    from ai_nexus.extraction.extraction_service import ExtractionService
     from ai_nexus.repos.audit_repo import AuditRepo
-    from ai_nexus.services.extraction_service import ExtractionService
 
     app = FastAPI()
     app.include_router(router)

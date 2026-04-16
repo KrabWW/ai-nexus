@@ -15,6 +15,7 @@ from ai_nexus.api.router import router as api_router
 from ai_nexus.api.violations_router import router as violations_router
 from ai_nexus.config import Settings
 from ai_nexus.db.sqlite import Database
+from ai_nexus.extraction.extraction_service import ExtractionService
 from ai_nexus.mcp.server import init_services, mcp
 from ai_nexus.proxy.mem0_proxy import Mem0Proxy
 from ai_nexus.repos.audit_repo import AuditRepo
@@ -23,7 +24,6 @@ from ai_nexus.repos.entity_repo import EntityRepo
 from ai_nexus.repos.relation_repo import RelationRepo
 from ai_nexus.repos.rule_repo import RuleRepo
 from ai_nexus.repos.violation_repo import ViolationRepo
-from ai_nexus.services.extraction_service import ExtractionService
 from ai_nexus.services.flywheel_service import FlywheelService
 from ai_nexus.services.graph_service import GraphService
 from ai_nexus.services.query_service import QueryService
